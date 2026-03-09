@@ -120,6 +120,7 @@ body::after {
   outline: none; transition: border-color 0.2s;
 }
 .kw-input:focus { border-color: var(--accent); }
+#modelSelect:focus { border-color: var(--c, #141210); }
 .kw-input::placeholder { color: #C4BFB8; }
 
 /* ═══ BUTTONS ═══ */
@@ -506,6 +507,13 @@ body::after {
              placeholder="예: 서울 카페 추천, 재택근무 팁 ..." autofocus
              style="--accent: var(--c);">
     </div>
+    <div class="model-select" style="margin-bottom:14px;">
+      <label style="font-size:10px;font-weight:700;letter-spacing:0.18em;text-transform:uppercase;color:#9B958E;display:block;margin-bottom:8px;">AI 모델</label>
+      <select id="modelSelect" style="width:100%;padding:12px 14px;font-size:14px;font-family:inherit;border:2px solid rgba(20,18,16,0.08);border-radius:10px;background:#fff;color:#141210;outline:none;cursor:pointer;transition:border-color 0.2s;appearance:none;background-image:url('data:image/svg+xml,<%3Fxml version=%221.0%22%3F><svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2212%22 height=%2212%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%239B958E%22 stroke-width=%222%22><polyline points=%226 9 12 15 18 9%22/></svg>');background-repeat:no-repeat;background-position:right 14px center;">
+        <option value="claude-haiku-4-5-20251001">HAIKU — 빠르고 경제적</option>
+        <option value="claude-sonnet-4-6">SONNET — 고품질</option>
+      </select>
+    </div>
     <div class="error-msg" id="errorMsg"></div>
     <button class="btn-primary" id="generateBtn" onclick="generate()">
       글 생성하기
@@ -559,6 +567,11 @@ body::after {
 
 <script>
 const PLATFORM = '{{ platform }}';
+const CURRENT_MODEL = '{{ current_model }}';
+document.addEventListener('DOMContentLoaded', function() {
+  var sel = document.getElementById('modelSelect');
+  if (sel && CURRENT_MODEL) sel.value = CURRENT_MODEL;
+});
 
 const PLAT_CFG = {
   tistory:   { letter:'T', name:'Tistory',   badge:'HTML 소스 생성', cls:'c-t', color:'#E8470A' },
@@ -693,7 +706,7 @@ async function generate() {
     const res = await fetch('/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ keyword, platform: PLATFORM, tone, category, subtype })
+      body: JSON.stringify({ keyword, platform: PLATFORM, tone, category, subtype, model: document.getElementById('modelSelect').value })
     });
     const data = await res.json();
     if (!res.ok) { showError(data.error || '생성에 실패했습니다.'); return; }

@@ -7,8 +7,10 @@ import json
 import random
 from datetime import datetime
 import requests as http_requests
-from flask import Flask, render_template, request, jsonify
+from functools import wraps
+from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 from dotenv import load_dotenv
+from werkzeug.security import check_password_hash, generate_password_hash
 import anthropic
 
 # app.py가 있는 디렉토리를 sys.path에 추가 (CWD 무관하게 import 보장)
@@ -19,6 +21,169 @@ if _APP_DIR not in sys.path:
 load_dotenv(os.path.join(_APP_DIR, ".env"))
 
 app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY", secrets.token_hex(32))
+app.config["SESSION_COOKIE_NAME"] = "wordpress_autoblog"
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_SECURE"] = os.environ.get("SESSION_COOKIE_SECURE", "").lower() == "true"
+
+# ──────────────────────────────────────────────
+#  인증 설정
+# ──────────────────────────────────────────────
+_ENV_PATH = os.path.join(_APP_DIR, ".env")
+
+
+AVAILABLE_MODELS = {
+    "haiku": "claude-haiku-4-5-20251001",
+    "sonnet": "claude-sonnet-4-6",
+}
+DEFAULT_MODEL = "claude-haiku-4-5-20251001"
+
+
+def _load_env_value(key, default=""):
+    """`.env` 파일에서 특정 키 값을 읽어온다. (멀티워커 안전)"""
+    if os.path.exists(_ENV_PATH):
+        with open(_ENV_PATH, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith(key + "="):
+                    return line.split("=", 1)[1]
+    return default
+
+
+def _get_model():
+    """현재 설정된 AI 모델을 반환."""
+    val = _load_env_value("AI_MODEL", DEFAULT_MODEL)
+    return val if val in AVAILABLE_MODELS.values() else DEFAULT_MODEL
+
+
+def _save_env_value(key, value):
+    """`.env` 파일에서 특정 키를 업데이트한다."""
+    if os.path.exists(_ENV_PATH):
+        with open(_ENV_PATH, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+    else:
+        lines = []
+    lines = [l for l in lines if not l.startswith(key + "=")]
+    lines.append(f"{key}={value}\n")
+    with open(_ENV_PATH, "w", encoding="utf-8") as f:
+        f.writelines(lines)
+
+
+def _load_password_from_env():
+    """`.env` 파일에서 비밀번호 설정을 매번 읽어온다. (멀티워커 안전)"""
+    pw_hash = ""
+    pw_plain = ""
+    if os.path.exists(_ENV_PATH):
+        with open(_ENV_PATH, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("APP_PASSWORD_HASH="):
+                    pw_hash = line.split("=", 1)[1]
+                elif line.startswith("APP_PASSWORD="):
+                    pw_plain = line.split("=", 1)[1]
+    return pw_hash, pw_plain
+
+
+def login_required(f):
+    """로그인 안 된 요청을 /login으로 리다이렉트하는 데코레이터."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not session.get("authenticated"):
+            if request.is_json or request.headers.get("X-Requested-With") == "XMLHttpRequest":
+                return jsonify({"error": "로그인이 필요합니다"}), 401
+            return redirect(url_for("login_page"))
+        return f(*args, **kwargs)
+    return decorated
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login_page():
+    if session.get("authenticated"):
+        return redirect(url_for("index"))
+
+    error = None
+    if request.method == "POST":
+        password = request.form.get("password", "")
+        if _check_password(password):
+            session["authenticated"] = True
+            session.permanent = True
+            return redirect(request.args.get("next") or url_for("index"))
+        error = "비밀번호가 틀렸습니다"
+
+    return render_template("login.html", error=error)
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login_page"))
+
+
+def _check_password(password: str) -> bool:
+    """`.env`에서 비밀번호를 읽어서 비교. 해시 우선, 평문 폴백."""
+    if not password:
+        return False
+    pw_hash, pw_plain = _load_password_from_env()
+    if pw_hash:
+        return check_password_hash(pw_hash, password)
+    if pw_plain:
+        return secrets.compare_digest(password, pw_plain)
+    return False
+
+
+def _update_env_password(new_password: str):
+    """`.env` 파일의 비밀번호를 해시로 교체."""
+    new_hash = generate_password_hash(new_password)
+
+    if os.path.exists(_ENV_PATH):
+        with open(_ENV_PATH, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+    else:
+        lines = []
+
+    # 기존 APP_PASSWORD / APP_PASSWORD_HASH 줄 제거
+    lines = [l for l in lines if not l.startswith("APP_PASSWORD_HASH=") and not l.startswith("APP_PASSWORD=")]
+
+    # 해시 방식으로 저장 (평문 제거)
+    lines.append(f"APP_PASSWORD_HASH={new_hash}\n")
+
+    with open(_ENV_PATH, "w", encoding="utf-8") as f:
+        f.writelines(lines)
+
+
+@app.route("/settings", methods=["GET", "POST"])
+def settings_page():
+    result = None
+    action = request.form.get("action", "")
+
+    if request.method == "POST" and action == "change_password":
+        current = request.form.get("current_password", "")
+        new_pw = request.form.get("new_password", "")
+        confirm = request.form.get("confirm_password", "")
+
+        if not _check_password(current):
+            result = {"ok": False, "msg": "현재 비밀번호가 틀렸습니다"}
+        elif len(new_pw) < 4:
+            result = {"ok": False, "msg": "새 비밀번호는 4자 이상이어야 합니다"}
+        elif new_pw != confirm:
+            result = {"ok": False, "msg": "새 비밀번호가 일치하지 않습니다"}
+        else:
+            _update_env_password(new_pw)
+            result = {"ok": True, "msg": "비밀번호가 변경되었습니다"}
+
+    elif request.method == "POST" and action == "change_model":
+        model_key = request.form.get("ai_model", "")
+        if model_key in AVAILABLE_MODELS:
+            _save_env_value("AI_MODEL", AVAILABLE_MODELS[model_key])
+            result = {"ok": True, "msg": f"모델이 {model_key.upper()}로 변경되었습니다"}
+        else:
+            result = {"ok": False, "msg": "잘못된 모델입니다"}
+
+    current_model = _get_model()
+    return render_template("settings.html", result=result,
+                           current_model=current_model, models=AVAILABLE_MODELS)
+
 
 # 주문 관리 Blueprint 등록
 from orders import orders_bp
@@ -27,6 +192,20 @@ app.register_blueprint(orders_bp)
 # 키워드 수집 Blueprint 등록
 from keywords import keywords_bp
 app.register_blueprint(keywords_bp)
+
+
+@app.before_request
+def require_login():
+    """로그인/정적 파일 외 모든 요청에 인증 강제."""
+    allowed = ("login_page", "static", "indexnow_key_file")
+    if request.endpoint in allowed:
+        return
+    if not session.get("authenticated"):
+        if request.is_json or request.headers.get("X-Requested-With") == "XMLHttpRequest":
+            from flask import abort
+            abort(401)
+        return redirect(url_for("login_page"))
+
 
 @app.after_request
 def add_no_cache_headers(response):
@@ -355,12 +534,47 @@ def index():
     return render_template("index.html")
 
 
+@app.route("/blog")
+def blog_page():
+    return render_template("blog.html")
+
+
+@app.route("/shop")
+def shop_page():
+    return render_template("section.html",
+        title="쇼핑몰 자동화",
+        title_en="Shop Automation",
+        icon_class="purple",
+        icon_svg='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 002-1.61L23 6H6"/></svg>',
+        desc="쇼핑몰 상품 등록 · 재고 관리 · 가격 자동화<br>곧 추가될 예정입니다")
+
+
+@app.route("/work")
+def work_page():
+    return render_template("section.html",
+        title="업무 자동화",
+        title_en="Work Automation",
+        icon_class="blue",
+        icon_svg='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>',
+        desc="반복 업무 자동화 · 문서 생성 · 보고서 작성<br>곧 추가될 예정입니다")
+
+
+@app.route("/personal")
+def personal_page():
+    return render_template("section.html",
+        title="개인",
+        title_en="Personal",
+        icon_class="dark",
+        icon_svg='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
+        desc="개인 메모 · 일정 관리 · 맞춤 도구<br>곧 추가될 예정입니다")
+
+
 @app.route("/write")
 def write():
     platform = request.args.get("platform", "tistory")
     if platform not in ("tistory", "naver", "wordpress"):
         platform = "tistory"
-    return render_template("write.html", platform=platform)
+    return render_template("write.html", platform=platform, current_model=_get_model())
 
 
 @app.route("/api/unsplash-search")
@@ -401,6 +615,10 @@ def generate():
     tone = data.get("tone", "informative")
     category = data.get("category", "it")
     subtype = data.get("subtype", "")
+
+    # 프론트에서 선택한 모델 (없으면 설정 페이지 기본값)
+    req_model = data.get("model", "")
+    use_model = req_model if req_model in AVAILABLE_MODELS.values() else _get_model()
 
     if not keyword:
         return jsonify({"error": "키워드를 입력해주세요."}), 400
@@ -533,7 +751,7 @@ def generate():
 
     try:
         meta_resp = claude_client.messages.create(
-            model="claude-haiku-4-5-20251001",
+            model=use_model,
             max_tokens=1000,
             system=system_prompt,
             messages=[{"role": "user", "content": meta_prompt}],
@@ -629,10 +847,10 @@ def generate():
     try:
         if use_web_search:
             # 웹 검색(Haiku) → 본문 생성(Sonnet) 2단계
-            body = _generate_body_with_web_search(system_prompt, body_prompt, keyword, category)
+            body = _generate_body_with_web_search(system_prompt, body_prompt, keyword, category, use_model)
         else:
             body_resp = claude_client.messages.create(
-                model="claude-sonnet-4-6",
+                model=use_model,
                 max_tokens=8000,
                 system=system_prompt,
                 messages=[{"role": "user", "content": body_prompt}],
@@ -707,10 +925,11 @@ def generate():
 
 
 
-def _generate_body_with_web_search(system_prompt: str, body_prompt: str, keyword: str, category: str = "") -> str:
+def _generate_body_with_web_search(system_prompt: str, body_prompt: str, keyword: str, category: str = "", model: str = "") -> str:
     """웹 검색 → 요약 → 본문 생성의 2단계로 처리합니다.
     1단계: Haiku + web_search로 검색 결과 요약 (저비용)
     2단계: Sonnet으로 요약 기반 본문 작성 (검색 없이)"""
+    use_model = model if model else _get_model()
 
     # ── 1단계: Haiku로 웹 검색 + 핵심 정보 요약 ──
     if category == "government":
@@ -744,7 +963,7 @@ def _generate_body_with_web_search(system_prompt: str, body_prompt: str, keyword
     for _ in range(3):  # 최대 3회 continuation
         try:
             resp = claude_client.messages.create(
-                model="claude-haiku-4-5-20251001",
+                model=use_model,
                 max_tokens=1024,
                 messages=messages,
                 tools=tools,
@@ -782,7 +1001,7 @@ def _generate_body_with_web_search(system_prompt: str, body_prompt: str, keyword
         enriched_prompt = body_prompt
 
     body_resp = claude_client.messages.create(
-        model="claude-sonnet-4-6",
+        model=use_model,
         max_tokens=8000,
         system=system_prompt,
         messages=[{"role": "user", "content": enriched_prompt}],
@@ -796,7 +1015,7 @@ def _translate_keyword_for_unsplash(keyword: str) -> str:
     if re.search(r"[가-힣]", keyword):
         try:
             resp = claude_client.messages.create(
-                model="claude-haiku-4-5-20251001",
+                model=_get_model(),
                 max_tokens=60,
                 messages=[{"role": "user", "content":
                     f"Translate this Korean keyword to a short English Unsplash search query (2-4 words, no quotes, no explanation):\n{keyword}"}],
@@ -809,7 +1028,7 @@ def _translate_keyword_for_unsplash(keyword: str) -> str:
     return keyword
 
 
-def _search_unsplash_images(keyword: str, count: int, used_ids: set | None = None) -> list[dict]:
+def _search_unsplash_images(keyword: str, count: int, used_ids=None) -> list:
     """Unsplash에서 키워드 관련 이미지를 검색하여 URL을 반환합니다.
     한국어 키워드는 자동으로 영어 번역 후 검색합니다.
     검색 결과가 부족하면 키워드를 단순화하여 재시도합니다."""
@@ -875,7 +1094,7 @@ def _search_unsplash_images(keyword: str, count: int, used_ids: set | None = Non
     return collected
 
 
-def _insert_images_at_h2(body: str, keyword: str, images: list[dict] | None = None) -> str:
+def _insert_images_at_h2(body: str, keyword: str, images=None) -> str:
     """h2 섹션에 Unsplash 이미지 삽입. 최대 3장, 균등 분배."""
     h2_pattern = re.compile(r"(<h2[^>]*>)(.*?)(</h2>)", re.IGNORECASE | re.DOTALL)
     h2_matches = list(h2_pattern.finditer(body))
@@ -1062,7 +1281,7 @@ def _wp_auth_header() -> dict:
     return {"Authorization": f"Basic {token}"}
 
 
-def _wp_upload_image(image_url: str, filename: str) -> int | None:
+def _wp_upload_image(image_url: str, filename: str):
     """이미지 URL을 다운로드하여 WP 미디어에 업로드하고 media ID를 반환."""
     try:
         img_resp = http_requests.get(image_url, timeout=15)
@@ -1087,7 +1306,7 @@ def _wp_upload_image(image_url: str, filename: str) -> int | None:
     return None
 
 
-def _wp_get_or_create_category(name: str) -> int | None:
+def _wp_get_or_create_category(name: str):
     """카테고리를 이름으로 검색하고, 없으면 생성."""
     try:
         resp = http_requests.get(
@@ -1403,4 +1622,4 @@ def publish_and_index():
 
 if __name__ == "__main__":
     os.chdir(_APP_DIR)
-    app.run(host="0.0.0.0", port=5000)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5001)))

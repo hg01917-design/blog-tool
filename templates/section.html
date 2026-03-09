@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AutoBlog — {{ title }}</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  min-height: 100vh;
+  background: #F5F1EB;
+  font-family: 'Noto Sans KR', sans-serif;
+  color: #141210;
+}
+body::after {
+  content: '';
+  position: fixed; inset: 0; pointer-events: none; z-index: 999;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23g)' opacity='0.025'/%3E%3C/svg%3E");
+}
+
+.topbar {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 0 44px; height: 56px;
+  border-bottom: 1px solid rgba(20,18,16,0.09);
+  animation: fadeDown 0.5s ease both;
+}
+.brand { display: flex; align-items: baseline; gap: 9px; text-decoration: none; color: inherit; }
+.brand-name { font-family: 'Bebas Neue', cursive; font-size: 22px; letter-spacing: 0.14em; }
+.brand-ver {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase;
+  color: #9B958E; background: rgba(20,18,16,0.07); padding: 2px 7px; border-radius: 3px;
+}
+.topbar-right { display: flex; align-items: center; gap: 24px; }
+.topbar-link {
+  font-size: 10px; font-weight: 500; letter-spacing: 0.15em; text-transform: uppercase;
+  color: #9B958E; text-decoration: none; transition: color 0.2s;
+}
+.topbar-link:hover { color: #141210; }
+.topbar-cta {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.15em; text-transform: uppercase;
+  color: #E8470A; text-decoration: none;
+}
+
+.layout {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: calc(100vh - 56px);
+  padding: 48px 24px;
+  animation: riseUp 0.65s cubic-bezier(0.22,1,0.36,1) both;
+}
+
+.section-icon {
+  width: 64px; height: 64px;
+  border-radius: 16px;
+  display: flex; align-items: center; justify-content: center;
+  margin-bottom: 24px;
+}
+.section-icon svg { width: 28px; height: 28px; }
+.icon-purple { background: rgba(139,92,246,0.1); color: #8B5CF6; }
+.icon-blue { background: rgba(37,99,235,0.1); color: #2563EB; }
+.icon-dark { background: rgba(20,18,16,0.06); color: #141210; }
+
+.section-title {
+  font-family: 'Bebas Neue', cursive;
+  font-size: 48px;
+  letter-spacing: 0.04em;
+  margin-bottom: 12px;
+}
+.section-sub {
+  font-size: 14px;
+  color: #9B958E;
+  text-align: center;
+  line-height: 1.8;
+  margin-bottom: 32px;
+}
+.badge {
+  font-size: 10px; font-weight: 700;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  padding: 6px 16px; border-radius: 20px;
+  background: rgba(20,18,16,0.06);
+  color: #9B958E;
+  margin-bottom: 36px;
+}
+.back-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 11px; font-weight: 700;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: #9B958E; text-decoration: none;
+  transition: color 0.2s, gap 0.2s;
+}
+.back-btn:hover { color: #141210; gap: 10px; }
+
+@keyframes riseUp { from { opacity:0; transform:translateY(32px); } to { opacity:1; transform:translateY(0); } }
+@keyframes fadeDown { from { opacity:0; transform:translateY(-10px); } to { opacity:1; transform:translateY(0); } }
+
+@media (max-width: 600px) {
+  .topbar { padding: 0 20px; }
+  .topbar-link { display: none; }
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <a class="brand" href="/">
+    <span class="brand-name">AutoBlog</span>
+    <span class="brand-ver">v2.0</span>
+  </a>
+  <nav class="topbar-right">
+    <a class="topbar-link" href="/">홈</a>
+    <a class="topbar-link" href="/settings">설정</a>
+    <a class="topbar-cta" href="/logout">로그아웃</a>
+  </nav>
+</header>
+
+<div class="layout">
+  <div class="section-icon icon-{{ icon_class }}">{{ icon_svg|safe }}</div>
+  <div class="section-title">{{ title_en }}</div>
+  <div class="section-sub">{{ desc|safe }}</div>
+  <div class="badge">Coming Soon</div>
+  <a class="back-btn" href="/"><span>←</span> 홈으로 돌아가기</a>
+</div>
+
+</body>
+</html>

@@ -64,7 +64,7 @@ def collect_keywords():
 # ──────────────────────────────────────────────
 #  구글 자동완성 (접미사 확장)
 # ──────────────────────────────────────────────
-def _google_autocomplete(keyword: str) -> list[str]:
+def _google_autocomplete(keyword: str) -> list:
     results = []
     seen = set()
     suffixes = ["", " 추천", " 방법", " 비용", " 후기"]
@@ -93,7 +93,7 @@ def _google_autocomplete(keyword: str) -> list[str]:
 # ──────────────────────────────────────────────
 _EXPANSIONS = list(" ㄱㄴㄷㄹㅁㅂㅅㅇㅈㅊㅋㅌㅍㅎ") + list("abcdefghij")
 
-def _google_related(keyword: str) -> list[str]:
+def _google_related(keyword: str) -> list:
     results = []
     seen = set()
     for ch in _EXPANSIONS:
@@ -121,7 +121,7 @@ def _google_related(keyword: str) -> list[str]:
 #  - ac.search.naver.com API가 로컬에서 빈 결과를 주므로
 #    네이버 검색 결과 페이지에서 추천 키워드를 직접 파싱
 # ──────────────────────────────────────────────
-def _naver_autocomplete(keyword: str) -> list[str]:
+def _naver_autocomplete(keyword: str) -> list:
     results = []
     seen = set()
 
@@ -176,7 +176,7 @@ def _naver_autocomplete(keyword: str) -> list[str]:
 # ──────────────────────────────────────────────
 #  네이버 연관검색어
 # ──────────────────────────────────────────────
-def _naver_related(keyword: str) -> list[str]:
+def _naver_related(keyword: str) -> list:
     try:
         session = requests.Session()
         session.headers.update(_HEADERS)
@@ -230,7 +230,7 @@ def _is_valid_naver_kw(text: str, keyword: str, seen: set) -> bool:
 # ──────────────────────────────────────────────
 #  중복/유사 키워드 정제
 # ──────────────────────────────────────────────
-def _deduplicate(keywords: list[str], seed: str) -> list[str]:
+def _deduplicate(keywords: list[str], seed: str) -> list:
     if not keywords:
         return []
 

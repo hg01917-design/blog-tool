@@ -6,9 +6,23 @@ if (isset($_SERVER['HTTP_HOST']) && $_SERVER['HTTP_HOST'] === 'app.baremi542.com
     $url = 'http://127.0.0.1:5000' . $path;
 
     $headers = [];
+    $has_cookie = false;
     foreach (getallheaders() as $name => $value) {
-        if (strtolower($name) !== 'host') {
-            $headers[] = "$name: $value";
+        $lower = strtolower($name);
+        if ($lower === 'host') continue;
+        if ($lower === 'cookie') $has_cookie = true;
+        $headers[] = "$name: $value";
+    }
+    if (!$has_cookie) {
+        $raw = $_SERVER['HTTP_COOKIE'] ?? '';
+        if ($raw) {
+            $headers[] = 'Cookie: ' . $raw;
+        } elseif (!empty($_COOKIE)) {
+            $pairs = [];
+            foreach ($_COOKIE as $k => $v) {
+                $pairs[] = $k . '=' . $v;
+            }
+            $headers[] = 'Cookie: ' . implode('; ', $pairs);
         }
     }
 
@@ -41,9 +55,11 @@ if (isset($_SERVER['HTTP_HOST']) && $_SERVER['HTTP_HOST'] === 'app.baremi542.com
     header("Pragma: no-cache");
     header("Expires: 0");
     foreach (explode("\r\n", $resp_headers) as $h) {
-        if (stripos($h, 'content-type:') === 0 || stripos($h, 'content-disposition:') === 0) {
-            header($h);
+        $h = trim($h);
+        if ($h === '' || stripos($h, 'HTTP/') === 0 || stripos($h, 'transfer-encoding:') === 0) {
+            continue;
         }
+        header($h, stripos($h, 'set-cookie:') !== 0);
     }
     echo $body;
     exit;
