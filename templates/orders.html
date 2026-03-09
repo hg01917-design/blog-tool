@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>주문 알림 - AutoBlog</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  height: 100%; background: #F5F1EB;
+  font-family: 'Noto Sans KR', sans-serif; color: #141210;
+}
+body::after {
+  content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 999;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23g)' opacity='0.025'/%3E%3C/svg%3E");
+}
+
+.page { display: grid; grid-template-rows: 56px 1fr; height: 100vh; }
+
+/* TOPBAR */
+.topbar {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 0 44px; border-bottom: 1px solid rgba(20,18,16,0.09);
+  animation: fadeDown 0.5s ease both;
+}
+.brand { display: flex; align-items: baseline; gap: 9px; }
+.brand-name { font-family: 'Bebas Neue', cursive; font-size: 22px; letter-spacing: 0.14em; text-decoration: none; color: inherit; }
+.brand-ver {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase;
+  color: #9B958E; background: rgba(20,18,16,0.07); padding: 2px 7px; border-radius: 3px;
+}
+.topbar-right { display: flex; align-items: center; gap: 24px; }
+.topbar-link {
+  font-size: 10px; font-weight: 500; letter-spacing: 0.15em; text-transform: uppercase;
+  color: #9B958E; text-decoration: none; transition: color 0.2s;
+}
+.topbar-link:hover, .topbar-link.active { color: #141210; }
+.topbar-link.active { font-weight: 700; border-bottom: 2px solid #E8470A; padding-bottom: 2px; }
+
+/* MAIN */
+.main { display: grid; grid-template-columns: 280px 1fr; overflow: hidden; }
+
+/* SIDEBAR */
+.sidebar {
+  border-right: 1px solid rgba(20,18,16,0.09);
+  padding: 24px 20px; overflow-y: auto;
+}
+.sidebar h3 {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase;
+  color: #9B958E; margin-bottom: 16px;
+}
+.sidebar-section { margin-bottom: 28px; }
+
+.platform-list { display: flex; flex-direction: column; gap: 6px; }
+.platform-item {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 12px; border-radius: 8px; cursor: pointer;
+  transition: background 0.2s;
+}
+.platform-item:hover { background: rgba(20,18,16,0.04); }
+.platform-info { display: flex; align-items: center; gap: 10px; }
+.platform-icon {
+  width: 32px; height: 32px; border-radius: 8px; display: flex;
+  align-items: center; justify-content: center; font-weight: 700; font-size: 13px; color: #fff;
+}
+.platform-name { font-size: 13px; font-weight: 500; }
+.platform-status {
+  font-size: 9px; font-weight: 600; padding: 3px 8px; border-radius: 4px;
+  letter-spacing: 0.05em;
+}
+.status-on { background: rgba(3,199,90,0.12); color: #00A847; }
+.status-off { background: rgba(20,18,16,0.06); color: #9B958E; }
+
+/* STATS */
+.stats-row { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
+.stat-card {
+  flex: 1; min-width: 100px; background: #fff; border-radius: 10px;
+  padding: 16px; border: 1px solid rgba(20,18,16,0.06);
+}
+.stat-label { font-size: 10px; color: #9B958E; font-weight: 500; letter-spacing: 0.05em; margin-bottom: 6px; }
+.stat-value { font-size: 28px; font-weight: 900; line-height: 1; }
+.stat-value.new { color: #E8470A; }
+.stat-value.processed { color: #03C75A; }
+.stat-value.total { color: #2563EB; }
+
+/* CONTENT AREA */
+.content { padding: 24px 32px; overflow-y: auto; }
+.content-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 20px;
+}
+.content-title { font-size: 20px; font-weight: 700; }
+
+/* TABS */
+.tabs { display: flex; gap: 0; margin-bottom: 20px; border-bottom: 1px solid rgba(20,18,16,0.09); }
+.tab {
+  padding: 10px 20px; font-size: 12px; font-weight: 500; color: #9B958E;
+  cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.2s;
+}
+.tab:hover { color: #141210; }
+.tab.active { color: #141210; font-weight: 700; border-bottom-color: #E8470A; }
+
+/* BUTTONS */
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 16px; border-radius: 6px; font-size: 11px; font-weight: 600;
+  letter-spacing: 0.05em; border: none; cursor: pointer; transition: all 0.2s;
+}
+.btn-primary { background: #E8470A; color: #fff; }
+.btn-primary:hover { background: #d03e08; }
+.btn-secondary { background: rgba(20,18,16,0.06); color: #141210; }
+.btn-secondary:hover { background: rgba(20,18,16,0.1); }
+.btn-sm { padding: 5px 10px; font-size: 10px; }
+.btn-success { background: #03C75A; color: #fff; }
+.btn-success:hover { background: #02a84c; }
+
+/* ORDERS TABLE */
+.orders-table {
+  width: 100%; border-collapse: separate; border-spacing: 0;
+  background: #fff; border-radius: 10px; border: 1px solid rgba(20,18,16,0.06);
+  overflow: hidden;
+}
+.orders-table th {
+  text-align: left; padding: 12px 16px;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+  color: #9B958E; background: rgba(20,18,16,0.02);
+  border-bottom: 1px solid rgba(20,18,16,0.06);
+}
+.orders-table td {
+  padding: 14px 16px; font-size: 13px; border-bottom: 1px solid rgba(20,18,16,0.04);
+  vertical-align: middle;
+}
+.orders-table tr:last-child td { border-bottom: none; }
+.orders-table tr:hover td { background: rgba(232,71,10,0.02); }
+
+.order-status {
+  display: inline-block; padding: 3px 10px; border-radius: 4px;
+  font-size: 10px; font-weight: 700;
+}
+.order-status.new { background: rgba(232,71,10,0.1); color: #E8470A; }
+.order-status.processed { background: rgba(3,199,90,0.1); color: #00A847; }
+.order-status.shipped { background: rgba(37,99,235,0.1); color: #2563EB; }
+
+.platform-badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 8px; border-radius: 4px; font-size: 10px; font-weight: 600;
+}
+
+.empty-state {
+  text-align: center; padding: 60px 20px; color: #9B958E;
+}
+.empty-state .icon { font-size: 48px; margin-bottom: 16px; opacity: 0.3; }
+.empty-state p { font-size: 13px; line-height: 1.8; }
+
+/* SETTINGS PANEL */
+.settings-panel { display: none; }
+.settings-panel.active { display: block; }
+.orders-panel { display: block; }
+.orders-panel.hidden { display: none; }
+
+.form-group { margin-bottom: 18px; }
+.form-label {
+  display: block; font-size: 11px; font-weight: 600; color: #141210;
+  margin-bottom: 6px; letter-spacing: 0.03em;
+}
+.form-hint { font-size: 10px; color: #9B958E; margin-top: 3px; }
+.form-input, .form-textarea, .form-select {
+  width: 100%; padding: 10px 14px; border: 1px solid rgba(20,18,16,0.12);
+  border-radius: 6px; font-size: 13px; font-family: inherit;
+  background: #fff; transition: border-color 0.2s;
+}
+.form-input:focus, .form-textarea:focus { outline: none; border-color: #E8470A; }
+.form-textarea { resize: vertical; min-height: 80px; }
+
+.toggle-wrap {
+  display: flex; align-items: center; gap: 10px; cursor: pointer;
+}
+.toggle {
+  width: 40px; height: 22px; background: rgba(20,18,16,0.12);
+  border-radius: 11px; position: relative; transition: background 0.2s;
+}
+.toggle.on { background: #03C75A; }
+.toggle::after {
+  content: ''; position: absolute; top: 2px; left: 2px;
+  width: 18px; height: 18px; background: #fff; border-radius: 50%;
+  transition: transform 0.2s;
+}
+.toggle.on::after { transform: translateX(18px); }
+.toggle-label { font-size: 13px; font-weight: 500; }
+
+.settings-section {
+  background: #fff; border-radius: 10px; border: 1px solid rgba(20,18,16,0.06);
+  padding: 24px; margin-bottom: 20px;
+}
+.settings-section h4 {
+  font-size: 14px; font-weight: 700; margin-bottom: 18px;
+  padding-bottom: 10px; border-bottom: 1px solid rgba(20,18,16,0.06);
+}
+
+/* NOTIFICATION TOAST */
+.toast {
+  position: fixed; top: 70px; right: 20px; z-index: 1000;
+  background: #141210; color: #fff; padding: 14px 20px;
+  border-radius: 8px; font-size: 13px; font-weight: 500;
+  transform: translateX(120%); transition: transform 0.3s ease;
+  max-width: 360px;
+}
+.toast.show { transform: translateX(0); }
+.toast.success { background: #03C75A; }
+.toast.error { background: #E8470A; }
+
+/* ANIMATIONS */
+@keyframes fadeDown { from { opacity:0; transform:translateY(-10px); } to { opacity:1; transform:translateY(0); } }
+@keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
+@keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
+
+/* MOBILE */
+@media (max-width: 768px) {
+  .main { grid-template-columns: 1fr; }
+  .sidebar { display: none; }
+  .content { padding: 16px; }
+  .topbar { padding: 0 16px; }
+  .stats-row { gap: 6px; }
+  .stat-card { min-width: 80px; padding: 12px; }
+}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- TOPBAR -->
+  <header class="topbar">
+    <div class="brand">
+      <a class="brand-name" href="/">AutoBlog</a>
+      <span class="brand-ver">v2.0</span>
+    </div>
+    <nav class="topbar-right">
+      <a class="topbar-link" href="/">블로그 글쓰기</a>
+      <a class="topbar-link active" href="/orders">주문 관리</a>
+    </nav>
+  </header>
+
+  <div class="main">
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+      <div class="sidebar-section">
+        <h3>연동 쇼핑몰</h3>
+        <div class="platform-list" id="platformList">
+          <!-- JS로 렌더링 -->
+        </div>
+      </div>
+
+      <div class="sidebar-section">
+        <h3>빠른 실행</h3>
+        <button class="btn btn-primary" style="width:100%; margin-bottom:8px;" onclick="checkNow()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 12A11 11 0 1 1 12 1v4"/><path d="M23 4l-11 8"/></svg>
+          지금 주문 확인
+        </button>
+        <button class="btn btn-secondary" style="width:100%; margin-bottom:8px;" onclick="addTestOrder()">
+          + 테스트 주문 추가
+        </button>
+        <button class="btn btn-secondary" style="width:100%;" onclick="testNotification()">
+          알림 테스트 발송
+        </button>
+      </div>
+    </aside>
+
+    <!-- CONTENT -->
+    <div class="content">
+      <!-- STATS -->
+      <div class="stats-row">
+        <div class="stat-card">
+          <div class="stat-label">신규 주문</div>
+          <div class="stat-value new" id="statNew">0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">처리 완료</div>
+          <div class="stat-value processed" id="statProcessed">0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">전체 주문</div>
+          <div class="stat-value total" id="statTotal">0</div>
+        </div>
+      </div>
+
+      <!-- TABS -->
+      <div class="tabs">
+        <div class="tab active" data-tab="orders" onclick="switchTab('orders')">주문 목록</div>
+        <div class="tab" data-tab="settings" onclick="switchTab('settings')">알림 설정</div>
+        <div class="tab" data-tab="platforms" onclick="switchTab('platforms')">플랫폼 연동</div>
+      </div>
+
+      <!-- ORDERS TAB -->
+      <div class="orders-panel" id="ordersPanel">
+        <div class="content-header">
+          <div style="display:flex;gap:8px;">
+            <button class="btn btn-sm btn-secondary filter-btn active" data-status="" onclick="filterOrders('')">전체</button>
+            <button class="btn btn-sm btn-secondary filter-btn" data-status="new" onclick="filterOrders('new')">미처리</button>
+            <button class="btn btn-sm btn-secondary filter-btn" data-status="processed" onclick="filterOrders('processed')">처리완료</button>
+          </div>
+        </div>
+
+        <table class="orders-table" id="ordersTable">
+          <thead>
+            <tr>
+              <th>주문번호</th>
+              <th>쇼핑몰</th>
+              <th>상품명</th>
+              <th>수량</th>
+              <th>주문자</th>
+              <th>주문일시</th>
+              <th>상태</th>
+              <th>액션</th>
+            </tr>
+          </thead>
+          <tbody id="ordersBody">
+          </tbody>
+        </table>
+
+        <div class="empty-state" id="emptyState" style="display:none;">
+          <div class="icon">&#128230;</div>
+          <p>아직 주문이 없습니다.<br>쇼핑몰을 연동하거나 테스트 주문을 추가해보세요.</p>
+        </div>
+      </div>
+
+      <!-- SETTINGS TAB -->
+      <div class="settings-panel" id="settingsPanel">
+        <div class="settings-section">
+          <h4>카카오 알림톡 설정</h4>
+          <div class="form-group">
+            <div class="toggle-wrap" onclick="toggleNotification()">
+              <div class="toggle" id="notifToggle"></div>
+              <span class="toggle-label">주문 알림 활성화</span>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">비즈엠 API 키</label>
+            <input class="form-input" id="kakaoApiKey" type="text" placeholder="비즈엠 API 키 입력">
+            <div class="form-hint">카카오 알림톡 발송을 위해 비즈엠(bizmsg.kr) 가입이 필요합니다</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">발신프로필 키 (Sender Key)</label>
+            <input class="form-input" id="kakaoSenderKey" type="text" placeholder="카카오톡 채널 발신프로필 키">
+          </div>
+          <div class="form-group">
+            <label class="form-label">템플릿 코드</label>
+            <input class="form-input" id="kakaoTemplateCode" type="text" placeholder="알림톡 템플릿 코드">
+          </div>
+          <div class="form-group">
+            <label class="form-label">알림 받을 전화번호</label>
+            <input class="form-input" id="recipientPhone" type="text" placeholder="01012345678">
+            <div class="form-hint">하나씨 전화번호 (하이픈 없이 숫자만)</div>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <h4>메시지 템플릿</h4>
+          <div class="form-group">
+            <label class="form-label">알림 메시지 내용</label>
+            <textarea class="form-textarea" id="messageTemplate" rows="5">{쇼핑몰}에 새 주문이 들어왔어요!
+상품명: {상품명}
+수량: {수량}개
+주문자: {주문자}</textarea>
+            <div class="form-hint">사용 가능한 변수: {쇼핑몰} {상품명} {수량} {주문자}</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">미리보기</label>
+            <div id="templatePreview" style="background:rgba(20,18,16,0.03);padding:14px;border-radius:8px;font-size:13px;line-height:1.8;white-space:pre-wrap;color:#141210;"></div>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">주문 확인 주기 (초)</label>
+          <input class="form-input" id="checkInterval" type="number" value="60" min="30" max="600" style="width:120px;">
+          <div class="form-hint">최소 30초 ~ 최대 600초 (10분)</div>
+        </div>
+
+        <button class="btn btn-primary" onclick="saveSettings()">설정 저장</button>
+      </div>
+
+      <!-- PLATFORMS TAB -->
+      <div class="settings-panel" id="platformsPanel">
+        <div id="platformSettings">
+          <!-- JS로 렌더링 -->
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const PLATFORMS = {
+  smartstore: { name: '스마트스토어', color: '#03C75A', icon: 'N' },
+  ably: { name: '에이블리', color: '#FF4D83', icon: 'A' },
+  zigzag: { name: '지그재그', color: '#FF2D78', icon: 'Z' },
+  lotteon: { name: '롯데온', color: '#E60012', icon: 'L' },
+  cafe24: { name: '카페24', color: '#14907E', icon: 'C' },
+  kakao_checkout: { name: '카카오체크아웃', color: '#FEE500', icon: 'K' },
+};
+
+const PLATFORM_FIELDS = {
+  smartstore: [
+    { key: 'client_id', label: '클라이언트 ID', hint: '네이버 커머스 API 애플리케이션 ID' },
+    { key: 'client_secret', label: '클라이언트 시크릿', hint: '네이버 커머스 API 시크릿', type: 'password' },
+  ],
+  ably: [
+    { key: 'api_key', label: 'API 키', hint: '에이블리 파트너 API 키', type: 'password' },
+  ],
+  zigzag: [
+    { key: 'api_key', label: 'API 키', hint: '지그재그 파트너 API 키', type: 'password' },
+  ],
+  lotteon: [
+    { key: 'api_key', label: 'API 키', hint: '롯데온 셀러 API 키', type: 'password' },
+  ],
+  cafe24: [
+    { key: 'mall_id', label: '몰 아이디', hint: '카페24 쇼핑몰 ID (예: myshop)' },
+    { key: 'client_id', label: '클라이언트 ID', hint: '카페24 API 앱 클라이언트 ID' },
+    { key: 'client_secret', label: '클라이언트 시크릿', hint: '카페24 API 앱 시크릿', type: 'password' },
+  ],
+  kakao_checkout: [
+    { key: 'api_key', label: 'API 키', hint: '카카오 체크아웃 파트너 API 키', type: 'password' },
+  ],
+};
+
+let currentConfig = {};
+let currentFilter = '';
+
+// 초기 로드
+document.addEventListener('DOMContentLoaded', () => {
+  loadConfig();
+  loadOrders();
+  updateTemplatePreview();
+  document.getElementById('messageTemplate').addEventListener('input', updateTemplatePreview);
+});
+
+async function loadConfig() {
+  try {
+    const resp = await fetch('/api/orders/config');
+    currentConfig = await resp.json();
+    renderPlatformList();
+    renderPlatformSettings();
+    applyConfigToForm();
+  } catch(e) { console.error(e); }
+}
+
+function applyConfigToForm() {
+  const c = currentConfig;
+  const toggle = document.getElementById('notifToggle');
+  if (c.notification_enabled) toggle.classList.add('on');
+  else toggle.classList.remove('on');
+
+  document.getElementById('kakaoApiKey').value = c.kakao_api_key || '';
+  document.getElementById('kakaoSenderKey').value = c.kakao_sender_key || '';
+  document.getElementById('kakaoTemplateCode').value = c.kakao_template_code || '';
+  document.getElementById('recipientPhone').value = c.recipient_phone || '';
+  document.getElementById('messageTemplate').value = c.message_template || '';
+  document.getElementById('checkInterval').value = c.check_interval_seconds || 60;
+  updateTemplatePreview();
+}
+
+function renderPlatformList() {
+  const list = document.getElementById('platformList');
+  list.innerHTML = '';
+  for (const [key, info] of Object.entries(PLATFORMS)) {
+    const enabled = currentConfig.platforms?.[key]?.enabled || false;
+    const iconBg = info.color;
+    list.innerHTML += `
+      <div class="platform-item" onclick="switchTab('platforms')">
+        <div class="platform-info">
+          <div class="platform-icon" style="background:${iconBg}">${info.icon}</div>
+          <span class="platform-name">${info.name}</span>
+        </div>
+        <span class="platform-status ${enabled ? 'status-on' : 'status-off'}">
+          ${enabled ? '연동됨' : '미연동'}
+        </span>
+      </div>
+    `;
+  }
+}
+
+function renderPlatformSettings() {
+  const container = document.getElementById('platformSettings');
+  container.innerHTML = '';
+  for (const [key, info] of Object.entries(PLATFORMS)) {
+    const pConfig = currentConfig.platforms?.[key] || {};
+    const enabled = pConfig.enabled || false;
+    const fields = PLATFORM_FIELDS[key] || [];
+
+    let fieldsHtml = fields.map(f => {
+      const val = pConfig[f.key] || '';
+      return `
+        <div class="form-group">
+          <label class="form-label">${f.label}</label>
+          <input class="form-input platform-field" data-platform="${key}" data-field="${f.key}"
+                 type="${f.type || 'text'}" value="${val}" placeholder="${f.hint || ''}">
+          ${f.hint ? `<div class="form-hint">${f.hint}</div>` : ''}
+        </div>
+      `;
+    }).join('');
+
+    container.innerHTML += `
+      <div class="settings-section">
+        <h4 style="display:flex;align-items:center;gap:10px;">
+          <div class="platform-icon" style="background:${info.color};width:28px;height:28px;font-size:11px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;color:#fff;">${info.icon}</div>
+          ${info.name}
+          <div style="margin-left:auto;">
+            <div class="toggle-wrap" onclick="togglePlatform('${key}', this)">
+              <div class="toggle ${enabled ? 'on' : ''}" id="toggle-${key}"></div>
+              <span class="toggle-label" style="font-size:11px;">${enabled ? '연동됨' : '미연동'}</span>
+            </div>
+          </div>
+        </h4>
+        ${fieldsHtml}
+      </div>
+    `;
+  }
+
+  container.innerHTML += `
+    <button class="btn btn-primary" onclick="savePlatforms()">플랫폼 설정 저장</button>
+  `;
+}
+
+async function loadOrders() {
+  try {
+    const url = '/api/orders/list' + (currentFilter ? `?status=${currentFilter}` : '');
+    const resp = await fetch(url);
+    const data = await resp.json();
+    renderOrders(data.orders || []);
+    updateStats(data);
+  } catch(e) { console.error(e); }
+}
+
+function renderOrders(orders) {
+  const tbody = document.getElementById('ordersBody');
+  const empty = document.getElementById('emptyState');
+  const table = document.getElementById('ordersTable');
+
+  if (!orders.length) {
+    tbody.innerHTML = '';
+    table.style.display = 'none';
+    empty.style.display = 'block';
+    return;
+  }
+
+  table.style.display = 'table';
+  empty.style.display = 'none';
+
+  tbody.innerHTML = orders.map(o => {
+    const p = PLATFORMS[o.platform] || { name: o.platform_name, color: '#999', icon: '?' };
+    const statusText = { new: '미처리', processed: '처리완료', shipped: '배송중' }[o.status] || o.status;
+    const date = o.order_date ? new Date(o.order_date).toLocaleString('ko-KR') : '-';
+    return `
+      <tr>
+        <td style="font-size:11px;font-family:monospace;">${o.order_id}</td>
+        <td>
+          <span class="platform-badge" style="background:${p.color}15;color:${p.color};">
+            ${p.icon} ${p.name}
+          </span>
+        </td>
+        <td style="font-weight:500;">${o.product_name}</td>
+        <td>${o.quantity}</td>
+        <td>${o.buyer_name}</td>
+        <td style="font-size:11px;color:#9B958E;">${date}</td>
+        <td><span class="order-status ${o.status}">${statusText}</span></td>
+        <td>
+          ${o.status === 'new' ? `<button class="btn btn-sm btn-success" onclick="markProcessed('${o.order_id}')">처리</button>` : ''}
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+async function updateStats() {
+  try {
+    const [allResp, newResp, procResp] = await Promise.all([
+      fetch('/api/orders/list'),
+      fetch('/api/orders/list?status=new'),
+      fetch('/api/orders/list?status=processed'),
+    ]);
+    const [all, newO, proc] = await Promise.all([allResp.json(), newResp.json(), procResp.json()]);
+    document.getElementById('statTotal').textContent = all.total || 0;
+    document.getElementById('statNew').textContent = newO.total || 0;
+    document.getElementById('statProcessed').textContent = proc.total || 0;
+  } catch(e) {}
+}
+
+function filterOrders(status) {
+  currentFilter = status;
+  document.querySelectorAll('.filter-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.status === status);
+    if (b.dataset.status === status) {
+      b.style.background = '#E8470A';
+      b.style.color = '#fff';
+    } else {
+      b.style.background = '';
+      b.style.color = '';
+    }
+  });
+  loadOrders();
+}
+
+function switchTab(tab) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+  document.getElementById('ordersPanel').classList.toggle('hidden', tab !== 'orders');
+  document.getElementById('settingsPanel').classList.toggle('active', tab === 'settings');
+  document.getElementById('platformsPanel').classList.toggle('active', tab === 'platforms');
+}
+
+function toggleNotification() {
+  const toggle = document.getElementById('notifToggle');
+  toggle.classList.toggle('on');
+}
+
+function togglePlatform(key, wrap) {
+  const toggle = document.getElementById('toggle-' + key);
+  toggle.classList.toggle('on');
+  const label = wrap.querySelector('.toggle-label');
+  label.textContent = toggle.classList.contains('on') ? '연동됨' : '미연동';
+}
+
+function updateTemplatePreview() {
+  const template = document.getElementById('messageTemplate').value;
+  const preview = template
+    .replace('{쇼핑몰}', '스마트스토어')
+    .replace('{상품명}', '여성 플리츠 스커트 블랙')
+    .replace('{수량}', '2')
+    .replace('{주문자}', '김민수');
+  document.getElementById('templatePreview').textContent = preview;
+}
+
+async function saveSettings() {
+  const config = {
+    notification_enabled: document.getElementById('notifToggle').classList.contains('on'),
+    kakao_api_key: document.getElementById('kakaoApiKey').value,
+    kakao_sender_key: document.getElementById('kakaoSenderKey').value,
+    kakao_template_code: document.getElementById('kakaoTemplateCode').value,
+    recipient_phone: document.getElementById('recipientPhone').value,
+    message_template: document.getElementById('messageTemplate').value,
+    check_interval_seconds: parseInt(document.getElementById('checkInterval').value) || 60,
+  };
+  try {
+    const resp = await fetch('/api/orders/config', {
+      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(config)
+    });
+    if (resp.ok) showToast('설정이 저장되었습니다.', 'success');
+    else showToast('저장 실패', 'error');
+  } catch(e) { showToast('저장 실패: ' + e.message, 'error'); }
+}
+
+async function savePlatforms() {
+  const platforms = {};
+  for (const key of Object.keys(PLATFORMS)) {
+    platforms[key] = {
+      enabled: document.getElementById('toggle-' + key)?.classList.contains('on') || false,
+    };
+    document.querySelectorAll(`.platform-field[data-platform="${key}"]`).forEach(input => {
+      platforms[key][input.dataset.field] = input.value;
+    });
+  }
+  try {
+    const resp = await fetch('/api/orders/config', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ platforms })
+    });
+    if (resp.ok) {
+      showToast('플랫폼 설정이 저장되었습니다.', 'success');
+      loadConfig();
+    } else showToast('저장 실패', 'error');
+  } catch(e) { showToast('저장 실패: ' + e.message, 'error'); }
+}
+
+async function checkNow() {
+  showToast('주문 확인 중...', '');
+  try {
+    const resp = await fetch('/api/orders/check-now', { method: 'POST' });
+    const data = await resp.json();
+    if (data.new_count > 0) {
+      showToast(`새 주문 ${data.new_count}건 발견!`, 'success');
+    } else {
+      showToast('새 주문이 없습니다.', '');
+    }
+    loadOrders();
+  } catch(e) { showToast('확인 실패: ' + e.message, 'error'); }
+}
+
+async function addTestOrder() {
+  const platforms = ['smartstore', 'ably', 'zigzag', 'lotteon', 'cafe24', 'kakao_checkout'];
+  const products = ['여성 플리츠 스커트 블랙', '오버핏 맨투맨 아이보리', '데일리 크로스백 브라운', '린넨 와이드팬츠 네이비', '스트랩 샌들 베이지'];
+  const buyers = ['김민수', '이서연', '박지호', '최예진', '정하늘'];
+
+  const p = platforms[Math.floor(Math.random() * platforms.length)];
+  try {
+    const resp = await fetch('/api/orders/add-test', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        platform: p,
+        platform_name: PLATFORMS[p].name,
+        product_name: products[Math.floor(Math.random() * products.length)],
+        quantity: Math.floor(Math.random() * 3) + 1,
+        buyer_name: buyers[Math.floor(Math.random() * buyers.length)],
+      })
+    });
+    if (resp.ok) {
+      showToast('테스트 주문이 추가되었습니다.', 'success');
+      loadOrders();
+    }
+  } catch(e) { showToast('추가 실패', 'error'); }
+}
+
+async function markProcessed(orderId) {
+  try {
+    await fetch(`/api/orders/${orderId}/status`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ status: 'processed' })
+    });
+    showToast('처리 완료되었습니다.', 'success');
+    loadOrders();
+  } catch(e) { showToast('처리 실패', 'error'); }
+}
+
+async function testNotification() {
+  try {
+    const resp = await fetch('/api/orders/test-notification', { method: 'POST' });
+    const data = await resp.json();
+    if (data.status === 'success') showToast('테스트 알림이 발송되었습니다.', 'success');
+    else if (data.status === 'skipped') showToast('알림톡 설정을 먼저 완료해주세요.', 'error');
+    else showToast('발송 실패: ' + (data.error || ''), 'error');
+  } catch(e) { showToast('발송 실패', 'error'); }
+}
+
+function showToast(msg, type) {
+  const toast = document.getElementById('toast');
+  toast.textContent = msg;
+  toast.className = 'toast' + (type ? ' ' + type : '');
+  toast.classList.add('show');
+  setTimeout(() => toast.classList.remove('show'), 3000);
+}
+</script>
+</body>
+</html>

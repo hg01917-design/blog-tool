@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AutoBlog — 키워드 수집</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { min-height: 100vh; background: #F5F1EB; font-family: 'Noto Sans KR', sans-serif; color: #141210; }
+
+.topbar {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 0 44px; height: 56px;
+  border-bottom: 1px solid rgba(20,18,16,0.09);
+}
+.brand { display: flex; align-items: baseline; gap: 9px; }
+.brand-name { font-family: 'Bebas Neue', cursive; font-size: 22px; letter-spacing: 0.14em; text-decoration: none; color: #141210; }
+.brand-ver { font-size: 9px; font-weight: 700; letter-spacing: 0.2em; color: #9B958E; background: rgba(20,18,16,0.07); padding: 2px 7px; border-radius: 3px; }
+.topbar-right { display: flex; align-items: center; gap: 24px; }
+.topbar-link { font-size: 10px; font-weight: 500; letter-spacing: 0.15em; text-transform: uppercase; color: #9B958E; text-decoration: none; }
+.topbar-link:hover { color: #141210; }
+
+.container { max-width: 960px; margin: 0 auto; padding: 40px 24px; }
+
+h1 { font-family: 'Bebas Neue', cursive; font-size: 36px; letter-spacing: 0.06em; margin-bottom: 8px; }
+.subtitle { font-size: 13px; color: #9B958E; margin-bottom: 32px; }
+
+/* 검색 영역 */
+.search-box {
+  display: flex; gap: 12px; margin-bottom: 32px;
+}
+.search-input {
+  flex: 1; padding: 14px 18px; border: 1px solid rgba(20,18,16,0.15);
+  border-radius: 8px; font-size: 15px; font-family: inherit; background: #fff;
+  outline: none; transition: border-color 0.2s;
+}
+.search-input:focus { border-color: #141210; }
+.search-btn {
+  padding: 14px 28px; border: none; border-radius: 8px; cursor: pointer;
+  font-size: 13px; font-weight: 700; letter-spacing: 0.08em;
+  background: #141210; color: #fff; transition: opacity 0.2s;
+}
+.search-btn:hover { opacity: 0.85; }
+.search-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* 상태 */
+.status { font-size: 13px; color: #9B958E; margin-bottom: 20px; min-height: 20px; }
+.status.error { color: #E8470A; }
+
+/* 결과 그리드 */
+.results-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 32px;
+}
+@media (max-width: 640px) { .results-grid { grid-template-columns: 1fr; } }
+
+.source-card {
+  background: #fff; border-radius: 10px; padding: 20px;
+  border: 1px solid rgba(20,18,16,0.08);
+}
+.source-title {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+  margin-bottom: 12px; display: flex; align-items: center; gap: 8px;
+}
+.source-count {
+  font-size: 10px; font-weight: 400; color: #9B958E;
+  background: rgba(20,18,16,0.05); padding: 2px 8px; border-radius: 10px;
+}
+.kw-list { list-style: none; }
+.kw-list li {
+  font-size: 13px; padding: 6px 0; border-bottom: 1px solid rgba(20,18,16,0.05);
+  display: flex; justify-content: space-between; align-items: center;
+}
+.kw-list li:last-child { border-bottom: none; }
+.kw-copy-btn {
+  font-size: 10px; color: #9B958E; background: none; border: 1px solid rgba(20,18,16,0.1);
+  border-radius: 4px; padding: 2px 8px; cursor: pointer; transition: all 0.2s;
+}
+.kw-copy-btn:hover { background: #141210; color: #fff; border-color: #141210; }
+
+/* 정제된 키워드 */
+.refined-section {
+  background: #fff; border-radius: 10px; padding: 24px;
+  border: 1px solid rgba(20,18,16,0.08); margin-bottom: 24px;
+}
+.refined-header {
+  display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;
+}
+.refined-title { font-size: 16px; font-weight: 700; }
+.refined-actions { display: flex; gap: 8px; }
+.action-btn {
+  font-size: 11px; font-weight: 600; padding: 8px 16px; border-radius: 6px;
+  border: 1px solid rgba(20,18,16,0.15); background: #fff; cursor: pointer; transition: all 0.2s;
+}
+.action-btn:hover { background: #141210; color: #fff; border-color: #141210; }
+.action-btn.primary { background: #141210; color: #fff; border-color: #141210; }
+.action-btn.primary:hover { opacity: 0.85; }
+
+.kw-chips {
+  display: flex; flex-wrap: wrap; gap: 8px;
+}
+.kw-chip {
+  font-size: 13px; padding: 6px 14px; border-radius: 20px;
+  background: rgba(20,18,16,0.05); cursor: pointer; transition: all 0.2s;
+  user-select: none;
+}
+.kw-chip:hover { background: rgba(20,18,16,0.12); }
+.kw-chip.selected { background: #141210; color: #fff; }
+
+.hidden { display: none; }
+
+/* 로딩 */
+.spinner {
+  display: inline-block; width: 14px; height: 14px;
+  border: 2px solid rgba(20,18,16,0.15); border-top-color: #141210;
+  border-radius: 50%; animation: spin 0.6s linear infinite; vertical-align: middle;
+  margin-right: 6px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <a class="brand-name" href="/">AutoBlog</a>
+    <span class="brand-ver">Keywords</span>
+  </div>
+  <nav class="topbar-right">
+    <a class="topbar-link" href="/">HOME</a>
+    <a class="topbar-link" href="/orders">ORDERS</a>
+  </nav>
+</header>
+
+<div class="container">
+  <h1>KEYWORD COLLECTOR</h1>
+  <p class="subtitle">구글 + 네이버 자동완성/연관검색어를 한번에 수집하고 중복을 자동 정제합니다</p>
+
+  <!-- 모드 선택 탭 -->
+  <div style="display:flex;gap:8px;margin-bottom:20px;">
+    <button class="action-btn primary" id="tabGeneral" onclick="switchTab('general')" style="flex:1;">일반 키워드</button>
+    <button class="action-btn" id="tabGov" onclick="switchTab('government')" style="flex:1;">정부지원금</button>
+  </div>
+
+  <div class="search-box">
+    <input class="search-input" id="kwInput" type="text" placeholder="키워드를 입력하세요 (예: 제주도 여행)" autofocus>
+    <button class="search-btn" id="collectBtn" onclick="collectKeywords()">수집 시작</button>
+  </div>
+
+  <!-- 시즌 키워드 추천 (정부지원금 모드) -->
+  <div class="refined-section hidden" id="seasonalSection" style="margin-bottom:20px;">
+    <div class="refined-header">
+      <span class="refined-title" id="seasonalTitle">이달의 추천 키워드</span>
+    </div>
+    <div class="kw-chips" id="seasonalChips"></div>
+  </div>
+
+  <div class="status" id="status"></div>
+
+  <!-- 정제된 키워드 -->
+  <div class="refined-section hidden" id="refinedSection">
+    <div class="refined-header">
+      <span class="refined-title">정제된 키워드 <span id="refinedCount" style="font-weight:400;color:#9B958E;font-size:13px;"></span></span>
+      <div class="refined-actions">
+        <button class="action-btn" onclick="selectAll()">전체 선택</button>
+        <button class="action-btn" onclick="deselectAll()">선택 해제</button>
+        <button class="action-btn primary" onclick="copySelected()">선택 복사</button>
+        <button class="action-btn" onclick="useInWriter()">글 작성기로</button>
+      </div>
+    </div>
+    <div class="kw-chips" id="refinedChips"></div>
+  </div>
+
+  <!-- 소스별 결과 (일반) -->
+  <div class="results-grid hidden" id="resultsGrid">
+    <div class="source-card" id="card-google-auto">
+      <div class="source-title">Google 자동완성 <span class="source-count" id="count-google-auto">0</span></div>
+      <ul class="kw-list" id="list-google-auto"></ul>
+    </div>
+    <div class="source-card" id="card-naver-auto">
+      <div class="source-title">Naver 자동완성 <span class="source-count" id="count-naver-auto">0</span></div>
+      <ul class="kw-list" id="list-naver-auto"></ul>
+    </div>
+    <div class="source-card" id="card-google-related">
+      <div class="source-title">Google 연관검색어 <span class="source-count" id="count-google-related">0</span></div>
+      <ul class="kw-list" id="list-google-related"></ul>
+    </div>
+    <div class="source-card" id="card-naver-related">
+      <div class="source-title">Naver 연관검색어 <span class="source-count" id="count-naver-related">0</span></div>
+      <ul class="kw-list" id="list-naver-related"></ul>
+    </div>
+  </div>
+
+  <!-- 소스별 결과 (정부지원금) -->
+  <div class="results-grid hidden" id="govResultsGrid">
+    <div class="source-card">
+      <div class="source-title">Google 지원금 키워드 <span class="source-count" id="count-gov-google">0</span></div>
+      <ul class="kw-list" id="list-gov-google"></ul>
+    </div>
+    <div class="source-card">
+      <div class="source-title">Naver 지원금 키워드 <span class="source-count" id="count-gov-naver">0</span></div>
+      <ul class="kw-list" id="list-gov-naver"></ul>
+    </div>
+  </div>
+</div>
+
+<script>
+const input = document.getElementById('kwInput');
+const btn = document.getElementById('collectBtn');
+const status = document.getElementById('status');
+let currentTab = 'general';
+
+input.addEventListener('keydown', e => { if (e.key === 'Enter') collectKeywords(); });
+
+function switchTab(tab) {
+  currentTab = tab;
+  document.getElementById('tabGeneral').className = tab === 'general' ? 'action-btn primary' : 'action-btn';
+  document.getElementById('tabGov').className = tab === 'government' ? 'action-btn primary' : 'action-btn';
+  document.getElementById('resultsGrid').classList.add('hidden');
+  document.getElementById('govResultsGrid').classList.add('hidden');
+  document.getElementById('refinedSection').classList.add('hidden');
+  status.textContent = '';
+
+  if (tab === 'government') {
+    input.placeholder = '정부지원금 키워드 (예: 청년지원금, 출산지원금)';
+    loadSeasonalKeywords();
+  } else {
+    input.placeholder = '키워드를 입력하세요 (예: 제주도 여행)';
+    document.getElementById('seasonalSection').classList.add('hidden');
+  }
+}
+
+function loadSeasonalKeywords() {
+  fetch('/api/keywords/government', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ keyword: '' })
+  }).then(r => r.json()).then(data => {
+    if (data.seasonal && data.seasonal.length) {
+      document.getElementById('seasonalTitle').textContent = `${data.seasonal_month}월 추천 키워드`;
+      document.getElementById('seasonalChips').innerHTML = data.seasonal.map(kw =>
+        `<span class="kw-chip" onclick="input.value='${esc(kw)}'; collectKeywords();">${esc(kw)}</span>`
+      ).join('');
+      document.getElementById('seasonalSection').classList.remove('hidden');
+    }
+  }).catch(() => {});
+}
+
+async function collectKeywords() {
+  const kw = input.value.trim();
+  if (!kw) { input.focus(); return; }
+
+  btn.disabled = true;
+  status.className = 'status';
+  status.innerHTML = '<span class="spinner"></span>키워드 수집 중...';
+  document.getElementById('resultsGrid').classList.add('hidden');
+  document.getElementById('govResultsGrid').classList.add('hidden');
+  document.getElementById('refinedSection').classList.add('hidden');
+
+  try {
+    const apiUrl = currentTab === 'government' ? '/api/keywords/government' : '/api/keywords/collect';
+    const resp = await fetch(apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keyword: kw })
+    });
+    const data = await resp.json();
+    if (data.error) { status.className = 'status error'; status.textContent = data.error; return; }
+
+    status.textContent = `총 ${data.total_raw}개 수집 → ${data.total_refined}개 정제 완료`;
+
+    if (currentTab === 'government') {
+      renderList('gov-google', data.sources.google_government || []);
+      renderList('gov-naver', data.sources.naver_government || []);
+      document.getElementById('govResultsGrid').classList.remove('hidden');
+    } else {
+      renderList('google-auto', data.sources.google_autocomplete);
+      renderList('naver-auto', data.sources.naver_autocomplete);
+      renderList('google-related', data.sources.google_related);
+      renderList('naver-related', data.sources.naver_related);
+      document.getElementById('resultsGrid').classList.remove('hidden');
+    }
+
+    renderChips(data.refined);
+    document.getElementById('refinedSection').classList.remove('hidden');
+
+  } catch (e) {
+    status.className = 'status error';
+    status.textContent = '수집 실패: ' + e.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function renderList(id, items) {
+  const list = document.getElementById('list-' + id);
+  const count = document.getElementById('count-' + id);
+  if (!list || !count) return;
+  count.textContent = items.length;
+  list.innerHTML = items.map(kw =>
+    `<li><span>${esc(kw)}</span><button class="kw-copy-btn" onclick="copyText('${esc(kw)}', this)">복사</button></li>`
+  ).join('');
+}
+
+function renderChips(items) {
+  const container = document.getElementById('refinedChips');
+  document.getElementById('refinedCount').textContent = `(${items.length}개)`;
+  container.innerHTML = items.map(kw =>
+    `<span class="kw-chip" onclick="this.classList.toggle('selected')">${esc(kw)}</span>`
+  ).join('');
+}
+
+function selectAll() {
+  document.querySelectorAll('.kw-chip').forEach(c => c.classList.add('selected'));
+}
+function deselectAll() {
+  document.querySelectorAll('.kw-chip').forEach(c => c.classList.remove('selected'));
+}
+function copySelected() {
+  const selected = [...document.querySelectorAll('.kw-chip.selected')].map(c => c.textContent);
+  if (!selected.length) { alert('키워드를 선택해주세요'); return; }
+  navigator.clipboard.writeText(selected.join('\n')).then(() => {
+    status.textContent = `${selected.length}개 키워드 클립보드에 복사됨`;
+  });
+}
+function useInWriter() {
+  const selected = [...document.querySelectorAll('.kw-chip.selected')].map(c => c.textContent);
+  if (!selected.length) { alert('키워드를 선택해주세요'); return; }
+  const platform = currentTab === 'government' ? 'wordpress' : '';
+  const url = '/write?keyword=' + encodeURIComponent(selected[0]) + (platform ? '&platform=' + platform : '');
+  window.location.href = url;
+}
+
+function copyText(text, el) {
+  navigator.clipboard.writeText(text).then(() => {
+    el.textContent = 'OK';
+    setTimeout(() => { el.textContent = '복사'; }, 1000);
+  });
+}
+
+function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+</script>
+</body>
+</html>
