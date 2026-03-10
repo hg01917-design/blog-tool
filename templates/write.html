@@ -514,6 +514,20 @@ body::after {
         <option value="claude-sonnet-4-6">SONNET — 고품질</option>
       </select>
     </div>
+    <!-- 경쟁글 분석 -->
+    <div style="margin-bottom:14px;">
+      <div onclick="document.getElementById('competitorSection').style.display=document.getElementById('competitorSection').style.display==='none'?'block':'none'" style="cursor:pointer;display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#9B958E;margin-bottom:8px;">
+        <span id="compToggleIcon">▶</span> 경쟁글 분석 (선택)
+      </div>
+      <div id="competitorSection" style="display:none;">
+        <input type="text" id="competitorUrl" placeholder="경쟁글 URL 붙여넣기" style="width:100%;padding:10px 14px;font-size:13px;font-family:inherit;border:2px solid rgba(20,18,16,0.08);border-radius:10px;background:#fff;color:#141210;outline:none;margin-bottom:8px;box-sizing:border-box;">
+        <textarea id="competitorContent" placeholder="또는 경쟁글 내용 직접 붙여넣기" rows="4" style="width:100%;padding:10px 14px;font-size:13px;font-family:inherit;border:2px solid rgba(20,18,16,0.08);border-radius:10px;background:#fff;color:#141210;outline:none;resize:vertical;margin-bottom:8px;box-sizing:border-box;"></textarea>
+        <button onclick="extractFacts()" id="extractBtn" style="width:100%;padding:10px;font-size:13px;font-weight:600;font-family:inherit;border:2px solid rgba(20,18,16,0.15);border-radius:10px;background:#f8f7f6;color:#141210;cursor:pointer;">
+          팩트 추출하기
+        </button>
+        <div id="factsResult" style="display:none;margin-top:10px;padding:12px 14px;background:#f0efed;border-radius:10px;font-size:13px;line-height:1.6;white-space:pre-wrap;"></div>
+      </div>
+    </div>
     <div class="error-msg" id="errorMsg"></div>
     <button class="btn-primary" id="generateBtn" onclick="generate()">
       글 생성하기
@@ -697,6 +711,39 @@ document.getElementById('keyword').addEventListener('keydown', e => {
   if (e.key === 'Enter') generate();
 });
 
+// 경쟁글 팩트 추출
+let extractedFacts = '';
+
+async function extractFacts() {
+  const url = document.getElementById('competitorUrl').value.trim();
+  const content = document.getElementById('competitorContent').value.trim();
+  if (!url && !content) { showError('경쟁글 URL 또는 내용을 입력해주세요.'); return; }
+
+  const btn = document.getElementById('extractBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>팩트 추출 중...';
+  const resultDiv = document.getElementById('factsResult');
+
+  try {
+    const res = await fetch('/api/extract-facts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, content })
+    });
+    const data = await res.json();
+    if (!res.ok) { showError(data.error || '팩트 추출 실패'); return; }
+
+    extractedFacts = (data.facts || '') + (data.summary ? '\n요약: ' + data.summary : '');
+    resultDiv.textContent = extractedFacts;
+    resultDiv.style.display = 'block';
+  } catch (err) {
+    showError('팩트 추출 중 오류가 발생했습니다.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '팩트 추출하기';
+  }
+}
+
 async function generate() {
   const keyword = document.getElementById('keyword').value.trim();
   if (!keyword) { showError('키워드를 입력해주세요.'); return; }
@@ -711,7 +758,7 @@ async function generate() {
     const res = await fetch('/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ keyword, platform: PLATFORM, tone, category, subtype, model: document.getElementById('modelSelect').value })
+      body: JSON.stringify({ keyword, platform: PLATFORM, tone, category, subtype, model: document.getElementById('modelSelect').value, competitor_facts: extractedFacts })
     });
     const data = await res.json();
     if (!res.ok) { showError(data.error || '생성에 실패했습니다.'); return; }

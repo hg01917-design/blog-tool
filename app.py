@@ -607,6 +607,69 @@ def unsplash_search():
         return jsonify({"results": []})
 
 
+@app.route("/api/extract-facts", methods=["POST"])
+def extract_facts():
+    """경쟁 블로그 글에서 날짜/장소/가격 등 팩트를 AI로 추출합니다."""
+    data = request.get_json()
+    content = data.get("content", "").strip()
+    url = data.get("url", "").strip()
+
+    if not content and not url:
+        return jsonify({"error": "경쟁글 URL 또는 내용을 입력해주세요."}), 400
+
+    # URL이 주어지면 본문 스크래핑
+    if url and not content:
+        try:
+            resp = http_requests.get(url, timeout=15, headers={"User-Agent": "Mozilla/5.0"})
+            resp.raise_for_status()
+            # HTML에서 텍스트만 추출 (간단한 태그 제거)
+            html_text = resp.text
+            html_text = re.sub(r'<script[^>]*>.*?</script>', '', html_text, flags=re.DOTALL | re.IGNORECASE)
+            html_text = re.sub(r'<style[^>]*>.*?</style>', '', html_text, flags=re.DOTALL | re.IGNORECASE)
+            html_text = re.sub(r'<[^>]+>', ' ', html_text)
+            html_text = re.sub(r'\s+', ' ', html_text).strip()
+            content = html_text[:5000]  # 토큰 절약을 위해 5000자 제한
+        except Exception as e:
+            return jsonify({"error": f"URL 스크래핑 실패: {str(e)}"}), 400
+
+    try:
+        fact_resp = claude_client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=1500,
+            system="당신은 블로그 글에서 팩트(사실 정보)를 추출하는 전문가입니다. 정확한 정보만 추출하세요.",
+            messages=[{"role": "user", "content": (
+                "다음 블로그 글에서 팩트 정보를 추출해주세요.\n\n"
+                f"글 내용:\n{content[:5000]}\n\n"
+                "추출 항목 (있는 것만):\n"
+                "- 날짜/기간 (영업시간, 운영기간, 신청기한 등)\n"
+                "- 장소/위치 (주소, 교통편 등)\n"
+                "- 가격/비용 (입장료, 이용료, 할인 등)\n"
+                "- 연락처/링크 (전화번호, 공식 사이트 등)\n"
+                "- 조건/자격 (신청자격, 필요서류 등)\n"
+                "- 수치/통계 (면적, 수용인원, 평점 등)\n\n"
+                "응답 형식:\n"
+                "---팩트---\n"
+                "각 항목을 '- 카테고리: 내용' 형식으로 나열\n"
+                "---요약---\n"
+                "이 글의 핵심 주제를 1~2문장으로 요약"
+            )}],
+        )
+        result = fact_resp.content[0].text.strip()
+
+        facts = ""
+        summary = ""
+        if "---팩트---" in result:
+            after_facts = result.split("---팩트---", 1)[1]
+            if "---요약---" in after_facts:
+                facts, summary = [p.strip() for p in after_facts.split("---요약---", 1)]
+            else:
+                facts = after_facts.strip()
+
+        return jsonify({"facts": facts, "summary": summary})
+    except anthropic.APIError as e:
+        return jsonify({"error": f"팩트 추출 실패: {e.message}"}), 500
+
+
 @app.route("/generate", methods=["POST"])
 def generate():
     data = request.get_json()
@@ -615,6 +678,7 @@ def generate():
     tone = data.get("tone", "informative")
     category = data.get("category", "it")
     subtype = data.get("subtype", "")
+    competitor_facts = data.get("competitor_facts", "").strip()
 
     # 프론트에서 선택한 모델 (없으면 설정 페이지 기본값)
     req_model = data.get("model", "")
@@ -788,6 +852,14 @@ def generate():
         f"키워드: {keyword}\n"
         f"글 톤: {tone_desc}\n\n"
     )
+
+    # 경쟁글 팩트가 있으면 프롬프트에 주입
+    if competitor_facts:
+        body_prompt += (
+            "[경쟁 블로그 분석 팩트 — 아래 정보를 본문에 자연스럽게 반영하세요]\n"
+            f"{competitor_facts}\n\n"
+            "위 팩트를 참고하되 그대로 복사하지 말고, 더 정확하고 풍부한 내용으로 재구성하세요.\n\n"
+        )
     # 티스토리: 메타설명 함께 요청
     meta_desc_instruction = ""
     if platform == "tistory":
