@@ -1,0 +1,13 @@
+[
+  {
+    "order_id": "TEST-1772902135",
+    "platform": "kakao_checkout",
+    "platform_name": "카카오체크아웃",
+    "product_name": "데일리 크로스백 브라운",
+    "quantity": 3,
+    "buyer_name": "정하늘",
+    "order_date": "2026-03-08T01:48:55.552814",
+    "status": "new",
+    "notified_at": "2026-03-08T01:48:55.552846"
+  }
+]

@@ -1,4 +1,10 @@
 <?php
+// Varnish bypass: 쿠키/세션이 있으면 캐시 안 함
+header('X-Varnish-Bypass: 1');
+header('Cache-Control: no-cache, no-store, must-revalidate, private');
+header('Pragma: no-cache');
+header('Expires: 0');
+
 $method = $_SERVER['REQUEST_METHOD'];
 $path = $_SERVER['REQUEST_URI'];
 $url = 'http://127.0.0.1:5000' . $path;

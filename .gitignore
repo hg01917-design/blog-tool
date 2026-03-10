@@ -1,0 +1,5 @@
+.env
+__pycache__/
+static/images/
+*.pyc
+.venv/

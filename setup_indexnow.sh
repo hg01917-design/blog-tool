@@ -20,7 +20,7 @@ cat ~/applications/qkdpuhswfk/public_html/${KEY}.txt
 cd ~/blog-tool
 kill $(cat gunicorn.pid 2>/dev/null) 2>/dev/null
 sleep 1
-~/.local/bin/gunicorn --bind 127.0.0.1:5000 --workers 2 --daemon --pid gunicorn.pid --access-logfile access.log --error-logfile error.log --timeout 300 app:app
+~/.local/bin/gunicorn --bind 127.0.0.1:5000 --workers 2 --daemon --pid gunicorn.pid --access-logfile access.log --error-logfile error.log --timeout 120 app:app
 echo "Gunicorn restarted"
 
 # Purge Varnish cache
