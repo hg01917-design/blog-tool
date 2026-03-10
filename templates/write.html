@@ -785,15 +785,22 @@ async function crawlCompetitors() {
     if (!res.ok && !data.facts) { showError(data.error || '크롤링 실패'); return; }
 
     let display = '';
-    if (data.count) display += '분석된 글: ' + data.count + '개\n';
+    if (data.count) display += '=== 분석된 글: ' + data.count + '개 ===\n';
     if (data.results) {
-      data.results.forEach((r, i) => { display += (i+1) + '. ' + r.url + '\n'; });
-      display += '\n';
+      data.results.forEach((r, i) => {
+        display += (i+1) + '. ' + (r.title || '제목 없음') + '\n   ' + r.url;
+        if (r.headings && r.headings.length) display += '\n   소제목: ' + r.headings.join(' / ');
+        display += '\n';
+      });
     }
-    if (data.facts) display += data.facts;
-    if (data.summary) display += '\n\n요약: ' + data.summary;
+    if (data.headings_analysis) display += '\n=== 소제목 구조 분석 ===\n' + data.headings_analysis;
+    if (data.facts) display += '\n\n=== 팩트 ===\n' + data.facts;
+    if (data.summary) display += '\n\n=== 요약 ===\n' + data.summary;
 
-    extractedFacts = (data.facts || '') + (data.summary ? '\n요약: ' + data.summary : '');
+    extractedFacts = '';
+    if (data.headings_analysis) extractedFacts += '소제목 구조:\n' + data.headings_analysis + '\n\n';
+    if (data.facts) extractedFacts += data.facts;
+    if (data.summary) extractedFacts += '\n요약: ' + data.summary;
     resultDiv.textContent = display;
     resultDiv.style.display = 'block';
     statusDiv.textContent = '크롤링 완료! 글 생성 시 자동 반영됩니다.';

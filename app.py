@@ -616,40 +616,82 @@ def _strip_html(html_text: str) -> str:
     return text
 
 
-def _scrape_naver_blog(url: str) -> str:
-    """네이버 블로그 URL에서 본문 텍스트를 추출합니다."""
+def _scrape_naver_blog(url: str) -> dict:
+    """네이버 블로그 URL에서 제목, 소제목, 본문 텍스트를 구조화하여 추출합니다."""
+    UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0"
+    result = {"title": "", "headings": [], "body": "", "url": url}
     try:
-        resp = http_requests.get(url, timeout=15, headers={
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        })
+        resp = http_requests.get(url, timeout=15, headers={"User-Agent": UA})
         resp.raise_for_status()
         html = resp.text
 
-        # 네이버 블로그는 iframe 구조 — postViewArea에서 본문 추출 시도
+        # 네이버 블로그 iframe 구조 대응 — PostView로 진입
         iframe_match = re.search(r'src="(https://blog\.naver\.com/PostView\.naver[^"]+)"', html)
         if iframe_match:
-            iframe_resp = http_requests.get(iframe_match.group(1), timeout=15, headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-            })
+            iframe_resp = http_requests.get(iframe_match.group(1), timeout=15, headers={"User-Agent": UA})
             iframe_resp.raise_for_status()
             html = iframe_resp.text
 
-        # 본문 영역 추출 시도
-        body_match = re.search(
-            r'<div[^>]*class="[^"]*se-main-container[^"]*"[^>]*>(.*?)</div>\s*</div>\s*</div>',
+        # 제목 추출
+        title_match = re.search(r'<div[^>]*class="[^"]*se-title-text[^"]*"[^>]*>(.*?)</div>', html, flags=re.DOTALL)
+        if not title_match:
+            title_match = re.search(r'<h3[^>]*class="[^"]*se_textarea[^"]*"[^>]*>(.*?)</h3>', html, flags=re.DOTALL)
+        if not title_match:
+            title_match = re.search(r'<title[^>]*>(.*?)</title>', html, flags=re.DOTALL)
+        if title_match:
+            result["title"] = _strip_html(title_match.group(1)).strip()
+
+        # 본문 영역 추출 — se-main-container (스마트에디터 ONE) 우선
+        body_html = ""
+        # 방법 1: se-main-container 전체 (중첩 div 대응을 위해 넉넉하게 캡처)
+        main_match = re.search(
+            r'(<div[^>]*class="[^"]*se-main-container[^"]*"[^>]*>)',
             html, flags=re.DOTALL
         )
-        if not body_match:
-            body_match = re.search(
-                r'<div[^>]*id="postViewArea"[^>]*>(.*?)</div>',
+        if main_match:
+            start = main_match.start()
+            # se-main-container 시작부터 문서 끝까지에서 본문 추출
+            body_html = html[start:start + 100000]
+        else:
+            # 방법 2: postViewArea (구 에디터)
+            pva_match = re.search(
+                r'(<div[^>]*id="postViewArea"[^>]*>)',
                 html, flags=re.DOTALL
             )
-        if body_match:
-            return _strip_html(body_match.group(1))[:5000]
+            if pva_match:
+                body_html = html[pva_match.start():pva_match.start() + 100000]
 
-        return _strip_html(html)[:5000]
-    except Exception:
-        return ""
+        if not body_html:
+            body_html = html
+
+        # 소제목 추출 (h2/h3/se-section-title 등)
+        headings = []
+        # 스마트에디터 ONE 소제목
+        for m in re.finditer(r'<div[^>]*class="[^"]*se-section-title[^"]*"[^>]*>(.*?)</div>', body_html, flags=re.DOTALL):
+            h = _strip_html(m.group(1)).strip()
+            if h and len(h) > 2:
+                headings.append(h)
+        # 일반 h2/h3 태그
+        if not headings:
+            for m in re.finditer(r'<h[23][^>]*>(.*?)</h[23]>', body_html, flags=re.DOTALL):
+                h = _strip_html(m.group(1)).strip()
+                if h and len(h) > 2:
+                    headings.append(h)
+        # strong/b 태그로 된 소제목 (볼드 텍스트가 한 줄에 단독으로 있는 경우)
+        if not headings:
+            for m in re.finditer(r'<(?:strong|b)[^>]*>(.*?)</(?:strong|b)>', body_html, flags=re.DOTALL):
+                h = _strip_html(m.group(1)).strip()
+                if 5 <= len(h) <= 50:
+                    headings.append(h)
+                if len(headings) >= 10:
+                    break
+
+        result["headings"] = headings[:10]
+        result["body"] = _strip_html(body_html)[:5000]
+        return result
+    except Exception as e:
+        print(f"[크롤링 실패] {url}: {e}")
+        return result
 
 
 @app.route("/api/crawl-competitors", methods=["POST"])
@@ -689,56 +731,90 @@ def crawl_competitors():
     except Exception as e:
         return jsonify({"error": f"네이버 검색 실패: {str(e)}"}), 400
 
-    # 각 블로그 크롤링 + 팩트 추출
+    # 각 블로그 크롤링 (구조화된 데이터)
     results = []
     all_contents = []
     for i, blog_url in enumerate(unique_urls):
-        content = _scrape_naver_blog(blog_url)
-        if content:
-            all_contents.append(f"[글 {i+1}] {content[:1500]}")
-            results.append({"url": blog_url, "length": len(content)})
+        scraped = _scrape_naver_blog(blog_url)
+        if scraped["body"]:
+            heading_text = ""
+            if scraped["headings"]:
+                heading_text = " | 소제목: " + ", ".join(scraped["headings"])
+            all_contents.append(
+                f"[글 {i+1}] 제목: {scraped['title']}{heading_text}\n"
+                f"본문: {scraped['body'][:2000]}"
+            )
+            results.append({
+                "url": blog_url,
+                "title": scraped["title"],
+                "headings": scraped["headings"],
+                "length": len(scraped["body"]),
+            })
 
     if not all_contents:
         return jsonify({"error": "블로그 본문을 가져올 수 없습니다.", "results": []}), 200
 
-    # AI로 통합 팩트 추출
+    # AI로 소제목 구조 + 팩트 통합 추출
     combined = "\n\n".join(all_contents)
     try:
         fact_resp = claude_client.messages.create(
             model="claude-haiku-4-5-20251001",
-            max_tokens=2000,
-            system="당신은 여러 블로그 글에서 공통된 팩트(사실 정보)를 추출·종합하는 전문가입니다.",
+            max_tokens=3000,
+            system="당신은 경쟁 블로그 분석 전문가입니다. 여러 블로그 글의 구조와 팩트를 정밀하게 분석합니다.",
             messages=[{"role": "user", "content": (
-                f"'{keyword}' 키워드로 검색한 네이버 블로그 상위 글 {len(all_contents)}개입니다.\n"
-                "이 글들에서 공통되거나 중요한 팩트를 종합해주세요.\n\n"
-                f"{combined[:8000]}\n\n"
-                "추출 항목 (있는 것만):\n"
-                "- 날짜/기간 (영업시간, 운영기간, 신청기한 등)\n"
-                "- 장소/위치 (주소, 교통편 등)\n"
-                "- 가격/비용 (입장료, 이용료, 할인 등)\n"
-                "- 연락처/링크 (전화번호, 공식 사이트 등)\n"
-                "- 조건/자격 (신청자격, 필요서류 등)\n"
-                "- 수치/통계 (면적, 수용인원, 평점 등)\n"
-                "- 공통 키포인트 (여러 글에서 반복적으로 언급되는 내용)\n\n"
-                "응답 형식:\n"
+                f"'{keyword}' 키워드로 검색한 네이버 블로그 상위 글 {len(all_contents)}개를 분석해주세요.\n\n"
+                f"{combined[:10000]}\n\n"
+                "아래 형식으로 분석 결과를 작성하세요.\n\n"
+                "---소제목 구조---\n"
+                "상위 글들이 공통으로 사용하는 소제목/섹션 구조를 정리하세요.\n"
+                "- 각 글의 소제목 패턴을 비교하여 공통 구조를 도출\n"
+                "- 우리 글에 적용할 추천 소제목 구조 (H2 5~7개) 제안\n\n"
                 "---팩트---\n"
-                "각 항목을 '- 카테고리: 내용' 형식으로 나열\n"
+                "글들에서 추출한 구체적 사실 정보를 카테고리별로 나열하세요.\n"
+                "- 날짜/기간: (영업시간, 운영기간, 신청기한, 방문 시기 등)\n"
+                "- 장소/위치: (주소, 교통편, 주차 정보 등)\n"
+                "- 가격/비용: (입장료, 이용료, 메뉴 가격, 할인 등)\n"
+                "- 연락처/링크: (전화번호, 공식 사이트, 예약 링크 등)\n"
+                "- 조건/자격: (신청자격, 필요서류, 제한사항 등)\n"
+                "- 수치/통계: (면적, 수용인원, 평점, 후기 수 등)\n"
+                "- 실전 팁: (블로거들이 공통으로 추천하는 팁/주의사항)\n"
+                "※ 각 항목에 출처 글 번호를 [글1][글3] 형태로 표기\n"
+                "※ 여러 글에서 수치가 다르면 범위로 표기 (예: 5,000~8,000원)\n\n"
                 "---요약---\n"
-                "상위 글들의 공통 주제와 차별화 포인트를 2~3문장으로 요약"
+                "- 상위 글들의 공통 주제와 핵심 메시지\n"
+                "- 우리 글에서 차별화할 수 있는 포인트"
             )}],
         )
         result_text = fact_resp.content[0].text.strip()
 
+        headings_analysis = ""
         facts = ""
         summary = ""
-        if "---팩트---" in result_text:
+
+        if "---소제목 구조---" in result_text:
+            after_headings = result_text.split("---소제목 구조---", 1)[1]
+            if "---팩트---" in after_headings:
+                headings_analysis, rest = [p.strip() for p in after_headings.split("---팩트---", 1)]
+                if "---요약---" in rest:
+                    facts, summary = [p.strip() for p in rest.split("---요약---", 1)]
+                else:
+                    facts = rest.strip()
+            else:
+                headings_analysis = after_headings.strip()
+        elif "---팩트---" in result_text:
             after_facts = result_text.split("---팩트---", 1)[1]
             if "---요약---" in after_facts:
                 facts, summary = [p.strip() for p in after_facts.split("---요약---", 1)]
             else:
                 facts = after_facts.strip()
 
-        return jsonify({"facts": facts, "summary": summary, "results": results, "count": len(all_contents)})
+        return jsonify({
+            "headings_analysis": headings_analysis,
+            "facts": facts,
+            "summary": summary,
+            "results": results,
+            "count": len(all_contents),
+        })
     except anthropic.APIError as e:
         return jsonify({"error": f"팩트 추출 실패: {e.message}"}), 500
 
@@ -756,7 +832,8 @@ def extract_facts():
     # URL이 주어지면 본문 스크래핑
     if url and not content:
         if "blog.naver.com" in url:
-            content = _scrape_naver_blog(url)
+            scraped = _scrape_naver_blog(url)
+            content = scraped["body"]
         else:
             try:
                 resp = http_requests.get(url, timeout=15, headers={
