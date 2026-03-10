@@ -712,15 +712,15 @@ def crawl_competitors():
         })
         resp.raise_for_status()
 
-        # 블로그 URL 추출 (상위 5개)
-        urls = re.findall(r'href="(https://blog\.naver\.com/[^"]+)"', resp.text)
+        # 개별 포스팅 URL만 추출 (username/postid 형식, 상위 5개)
+        # blog.naver.com/username/숫자 패턴만 매칭 (블로그 홈 URL 제외)
+        urls = re.findall(r'href="(https://blog\.naver\.com/[^"/]+/\d+)"', resp.text)
         # 중복 제거하면서 순서 유지
         seen = set()
         unique_urls = []
         for u in urls:
-            clean = u.split("?")[0]
-            if clean not in seen:
-                seen.add(clean)
+            if u not in seen:
+                seen.add(u)
                 unique_urls.append(u)
             if len(unique_urls) >= 5:
                 break
