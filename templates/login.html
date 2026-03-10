@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AutoBlog — 로그인</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  height: 100%;
+  background: #F5F1EB;
+  font-family: 'Noto Sans KR', sans-serif;
+  color: #141210;
+}
+body::after {
+  content: '';
+  position: fixed; inset: 0; pointer-events: none; z-index: 999;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23g)' opacity='0.025'/%3E%3C/svg%3E");
+}
+
+.page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 24px;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 380px;
+  animation: riseUp 0.65s cubic-bezier(0.22,1,0.36,1) both;
+}
+
+.brand {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 9px;
+  margin-bottom: 48px;
+}
+.brand-name {
+  font-family: 'Bebas Neue', cursive;
+  font-size: 32px;
+  letter-spacing: 0.14em;
+}
+.brand-ver {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase;
+  color: #9B958E; background: rgba(20,18,16,0.07); padding: 2px 7px; border-radius: 3px;
+}
+
+.login-label {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #9B958E;
+  margin-bottom: 10px;
+}
+
+.pw-wrap {
+  position: relative;
+}
+.login-input {
+  width: 100%;
+  padding: 14px 48px 14px 18px;
+  font-size: 15px;
+  font-family: 'Noto Sans KR', sans-serif;
+  border: 1px solid rgba(20,18,16,0.12);
+  border-radius: 7px;
+  background: #fff;
+  color: #141210;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.pw-toggle {
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  color: #9B958E;
+  transition: color 0.2s;
+}
+.pw-toggle:hover { color: #141210; }
+.pw-toggle svg { display: block; }
+.login-input:focus {
+  border-color: #141210;
+}
+
+.login-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: 100%;
+  margin-top: 18px;
+  padding: 14px 16px;
+  border-radius: 7px;
+  font-size: 11px;
+  font-weight: 700;
+  font-family: 'Noto Sans KR', sans-serif;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  border: none;
+  cursor: pointer;
+  background: #141210;
+  color: #fff;
+  transition: transform 0.2s, opacity 0.2s;
+}
+.login-btn:hover { transform: translateY(-2px); opacity: 0.9; }
+.login-btn:active { transform: translateY(0); }
+
+.error-msg {
+  margin-top: 16px;
+  padding: 10px 14px;
+  border-radius: 6px;
+  background: rgba(232,71,10,0.08);
+  color: #E8470A;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: center;
+}
+
+@keyframes riseUp {
+  from { opacity: 0; transform: translateY(32px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="login-card">
+    <div class="brand">
+      <span class="brand-name">AutoBlog</span>
+      <span class="brand-ver">v2.0</span>
+    </div>
+
+    <form method="POST">
+      <label class="login-label" for="password">Password</label>
+      <div class="pw-wrap">
+        <input class="login-input" type="password" id="password" name="password"
+               placeholder="비밀번호를 입력하세요" autofocus required>
+        <button type="button" class="pw-toggle" onclick="togglePw(this)" aria-label="비밀번호 보기">
+          <svg class="eye-open" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          <svg class="eye-closed" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+        </button>
+      </div>
+      <button class="login-btn" type="submit">로그인 <span>→</span></button>
+    </form>
+
+    {% if error %}
+    <div class="error-msg">{{ error }}</div>
+    {% endif %}
+  </div>
+</div>
+<script>
+function togglePw(btn) {
+  var input = btn.previousElementSibling;
+  var open = btn.querySelector('.eye-open');
+  var closed = btn.querySelector('.eye-closed');
+  if (input.type === 'password') {
+    input.type = 'text';
+    open.style.display = 'none';
+    closed.style.display = 'block';
+  } else {
+    input.type = 'password';
+    open.style.display = 'block';
+    closed.style.display = 'none';
+  }
+}
+</script>
+</body>
+</html>

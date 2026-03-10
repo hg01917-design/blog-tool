@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AutoBlog — Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  min-height: 100vh;
+  background: #F5F1EB;
+  font-family: 'Noto Sans KR', sans-serif;
+  color: #141210;
+}
+body::after {
+  content: '';
+  position: fixed; inset: 0; pointer-events: none; z-index: 999;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23g)' opacity='0.025'/%3E%3C/svg%3E");
+}
+
+.page {
+  display: grid;
+  grid-template-rows: 56px 1fr;
+  min-height: 100vh;
+}
+
+/* TOPBAR */
+.topbar {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 0 44px;
+  border-bottom: 1px solid rgba(20,18,16,0.09);
+  animation: fadeDown 0.5s ease both;
+}
+.brand { display: flex; align-items: baseline; gap: 9px; text-decoration: none; color: inherit; }
+.brand-name { font-family: 'Bebas Neue', cursive; font-size: 22px; letter-spacing: 0.14em; }
+.brand-ver {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase;
+  color: #9B958E; background: rgba(20,18,16,0.07); padding: 2px 7px; border-radius: 3px;
+}
+.topbar-right { display: flex; align-items: center; gap: 24px; }
+.topbar-link {
+  font-size: 10px; font-weight: 500; letter-spacing: 0.15em; text-transform: uppercase;
+  color: #9B958E; text-decoration: none; transition: color 0.2s;
+}
+.topbar-link:hover { color: #141210; }
+.topbar-cta {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.15em; text-transform: uppercase;
+  color: #E8470A; text-decoration: none;
+}
+
+/* DASHBOARD */
+.dashboard {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 32px;
+}
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  max-width: 720px;
+  width: 100%;
+}
+
+/* CARD */
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 32px 28px 28px;
+  min-height: 220px;
+  border-radius: 14px;
+  background: #fff;
+  border: 1px solid rgba(20,18,16,0.08);
+  cursor: pointer;
+  text-decoration: none;
+  color: inherit;
+  transition: transform 0.25s cubic-bezier(0.22,1,0.36,1), box-shadow 0.25s, border-color 0.25s;
+  animation: riseUp 0.65s cubic-bezier(0.22,1,0.36,1) both;
+}
+.card:nth-child(1) { animation-delay: 0.06s; }
+.card:nth-child(2) { animation-delay: 0.12s; }
+.card:nth-child(3) { animation-delay: 0.18s; }
+.card:nth-child(4) { animation-delay: 0.24s; }
+
+.card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 40px rgba(20,18,16,0.08);
+  border-color: rgba(20,18,16,0.15);
+}
+
+.card-icon {
+  width: 44px; height: 44px;
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  margin-bottom: 20px;
+  flex-shrink: 0;
+}
+.card-icon svg { width: 22px; height: 22px; }
+
+.card-1 .card-icon { background: rgba(232,71,10,0.1); color: #E8470A; }
+.card-2 .card-icon { background: rgba(139,92,246,0.1); color: #8B5CF6; }
+.card-3 .card-icon { background: rgba(37,99,235,0.1); color: #2563EB; }
+.card-4 .card-icon { background: rgba(20,18,16,0.06); color: #141210; }
+
+.card-title {
+  font-family: 'Bebas Neue', cursive;
+  font-size: 26px;
+  letter-spacing: 0.04em;
+  line-height: 1.1;
+  margin-bottom: 8px;
+}
+.card-desc {
+  font-size: 12.5px;
+  color: #9B958E;
+  line-height: 1.7;
+  flex: 1;
+}
+.card-arrow {
+  display: flex; align-items: center; gap: 6px;
+  margin-top: 18px;
+  font-size: 10px; font-weight: 700;
+  letter-spacing: 0.15em; text-transform: uppercase;
+  transition: gap 0.2s;
+}
+.card-1 .card-arrow { color: #E8470A; }
+.card-2 .card-arrow { color: #8B5CF6; }
+.card-3 .card-arrow { color: #2563EB; }
+.card-4 .card-arrow { color: #141210; }
+
+.card:hover .card-arrow { gap: 10px; }
+
+.card-count {
+  position: absolute;
+  top: 28px; right: 28px;
+  font-size: 9px; font-weight: 700;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  padding: 3px 9px; border-radius: 4px;
+}
+.card-1 .card-count { background: rgba(232,71,10,0.08); color: #E8470A; }
+.card-2 .card-count { background: rgba(139,92,246,0.08); color: #8B5CF6; }
+.card-3 .card-count { background: rgba(37,99,235,0.08); color: #2563EB; }
+.card-4 .card-count { background: rgba(20,18,16,0.05); color: #9B958E; }
+
+@keyframes riseUp { from { opacity:0; transform:translateY(32px); } to { opacity:1; transform:translateY(0); } }
+@keyframes fadeDown { from { opacity:0; transform:translateY(-10px); } to { opacity:1; transform:translateY(0); } }
+
+@media (max-width: 600px) {
+  .topbar { padding: 0 20px; }
+  .topbar-link { display: none; }
+  .grid { grid-template-columns: 1fr; }
+  .dashboard { padding: 24px 16px; }
+  .card { min-height: 180px; }
+}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="topbar">
+    <a class="brand" href="/">
+      <span class="brand-name">AutoBlog</span>
+      <span class="brand-ver">v2.0</span>
+    </a>
+    <nav class="topbar-right">
+      <a class="topbar-link" href="/settings">설정</a>
+      <a class="topbar-cta" href="/logout">로그아웃</a>
+    </nav>
+  </header>
+
+  <main class="dashboard">
+    <div class="grid">
+
+      <!-- 1. 블로그 자동화 -->
+      <a class="card card-1" href="/blog">
+        <span class="card-count">3 platforms</span>
+        <div class="card-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/>
+          </svg>
+        </div>
+        <div class="card-title">Blog Automation</div>
+        <div class="card-desc">티스토리 · 네이버 · 워드프레스<br>AI 글 생성 및 자동 발행</div>
+        <div class="card-arrow">시작하기 <span>→</span></div>
+      </a>
+
+      <!-- 2. 쇼핑몰 자동화 -->
+      <a class="card card-2" href="/shop">
+        <span class="card-count">coming soon</span>
+        <div class="card-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/>
+            <path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 002-1.61L23 6H6"/>
+          </svg>
+        </div>
+        <div class="card-title">Shop Automation</div>
+        <div class="card-desc">쇼핑몰 상품 등록 · 관리<br>자동화 도구 (준비 중)</div>
+        <div class="card-arrow">시작하기 <span>→</span></div>
+      </a>
+
+      <!-- 3. 업무 자동화 -->
+      <a class="card card-3" href="/work">
+        <span class="card-count">coming soon</span>
+        <div class="card-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
+          </svg>
+        </div>
+        <div class="card-title">Work Automation</div>
+        <div class="card-desc">반복 업무 자동화<br>문서 · 보고서 생성 (준비 중)</div>
+        <div class="card-arrow">시작하기 <span>→</span></div>
+      </a>
+
+      <!-- 4. 개인 -->
+      <a class="card card-4" href="/personal">
+        <span class="card-count">coming soon</span>
+        <div class="card-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/>
+          </svg>
+        </div>
+        <div class="card-title">Personal</div>
+        <div class="card-desc">개인 메모 · 일정 관리<br>맞춤 도구 (준비 중)</div>
+        <div class="card-arrow">시작하기 <span>→</span></div>
+      </a>
+
+    </div>
+  </main>
+
+</div>
+</body>
+</html>

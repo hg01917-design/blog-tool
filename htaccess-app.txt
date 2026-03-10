@@ -1,0 +1,5 @@
+# Flask App Proxy for app.baremi542.com
+RewriteEngine On
+RewriteCond %{HTTP_HOST} ^app\.baremi542\.com$ [NC]
+RewriteCond %{REQUEST_URI} !^/flask-proxy\.php
+RewriteRule ^(.*)$ /flask-proxy.php [L,QSA]

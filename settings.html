@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AutoBlog — 설정</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  min-height: 100vh;
+  background: #F5F1EB;
+  font-family: 'Noto Sans KR', sans-serif;
+  color: #141210;
+}
+body::after {
+  content: '';
+  position: fixed; inset: 0; pointer-events: none; z-index: 999;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23g)' opacity='0.025'/%3E%3C/svg%3E");
+}
+
+/* TOPBAR */
+.topbar {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 0 44px; height: 56px;
+  border-bottom: 1px solid rgba(20,18,16,0.09);
+}
+.brand { display: flex; align-items: baseline; gap: 9px; text-decoration: none; color: inherit; }
+.brand-name { font-family: 'Bebas Neue', cursive; font-size: 22px; letter-spacing: 0.14em; }
+.brand-ver {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase;
+  color: #9B958E; background: rgba(20,18,16,0.07); padding: 2px 7px; border-radius: 3px;
+}
+.topbar-right { display: flex; align-items: center; gap: 24px; }
+.topbar-link {
+  font-size: 10px; font-weight: 500; letter-spacing: 0.15em; text-transform: uppercase;
+  color: #9B958E; text-decoration: none; transition: color 0.2s;
+}
+.topbar-link:hover { color: #141210; }
+.topbar-link.active { color: #141210; font-weight: 700; }
+.topbar-cta {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.15em; text-transform: uppercase;
+  color: #E8470A; text-decoration: none;
+}
+
+/* LAYOUT */
+.layout {
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 48px 24px 80px;
+  animation: riseUp 0.65s cubic-bezier(0.22,1,0.36,1) both;
+}
+
+.page-title {
+  font-family: 'Bebas Neue', cursive;
+  font-size: 36px;
+  letter-spacing: 0.06em;
+  margin-bottom: 8px;
+}
+.page-sub {
+  font-size: 13px;
+  color: #9B958E;
+  margin-bottom: 36px;
+}
+
+/* FORM */
+.field { margin-bottom: 20px; }
+.field-label {
+  display: block;
+  font-size: 10px; font-weight: 700;
+  letter-spacing: 0.18em; text-transform: uppercase;
+  color: #9B958E;
+  margin-bottom: 8px;
+}
+.field-input {
+  width: 100%;
+  padding: 13px 16px;
+  font-size: 14px;
+  font-family: 'Noto Sans KR', sans-serif;
+  border: 1px solid rgba(20,18,16,0.12);
+  border-radius: 7px;
+  background: #fff;
+  color: #141210;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.field-input:focus { border-color: #141210; }
+
+.save-btn {
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+  width: 100%;
+  margin-top: 28px;
+  padding: 14px 16px;
+  border-radius: 7px;
+  font-size: 11px; font-weight: 700;
+  font-family: 'Noto Sans KR', sans-serif;
+  letter-spacing: 0.16em; text-transform: uppercase;
+  border: none; cursor: pointer;
+  background: #141210; color: #fff;
+  transition: transform 0.2s, opacity 0.2s;
+}
+.save-btn:hover { transform: translateY(-2px); opacity: 0.9; }
+.save-btn:active { transform: translateY(0); }
+
+/* RESULT */
+.result-msg {
+  margin-top: 20px;
+  padding: 12px 16px;
+  border-radius: 6px;
+  font-size: 13px; font-weight: 500;
+  text-align: center;
+}
+.result-ok {
+  background: rgba(3,199,90,0.1);
+  color: #00A847;
+}
+.result-err {
+  background: rgba(232,71,10,0.08);
+  color: #E8470A;
+}
+
+/* RADIO */
+.radio-group { display: flex; flex-direction: column; gap: 10px; }
+.radio-option {
+  display: flex; align-items: center; gap: 12px;
+  padding: 13px 16px;
+  border: 1px solid rgba(20,18,16,0.12);
+  border-radius: 7px;
+  background: #fff;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+}
+.radio-option:hover { border-color: rgba(20,18,16,0.3); }
+.radio-active { border-color: #141210; background: rgba(20,18,16,0.03); }
+.radio-option input[type="radio"] { accent-color: #141210; margin: 0; }
+.radio-label { font-size: 14px; font-weight: 700; letter-spacing: 0.08em; }
+.radio-desc { font-size: 11px; color: #9B958E; }
+
+.divider {
+  height: 1px;
+  background: rgba(20,18,16,0.09);
+  margin: 36px 0;
+}
+
+@keyframes riseUp {
+  from { opacity: 0; transform: translateY(32px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 680px) {
+  .topbar { padding: 0 20px; }
+  .topbar-link { display: none; }
+  .topbar-link.active { display: block; }
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <a class="brand" href="/">
+    <span class="brand-name">AutoBlog</span>
+    <span class="brand-ver">v2.0</span>
+  </a>
+  <nav class="topbar-right">
+    <a class="topbar-link" href="/">홈</a>
+    <a class="topbar-link" href="/keywords">키워드 수집</a>
+    <a class="topbar-link" href="/orders">주문 관리</a>
+    <a class="topbar-link active" href="/settings">설정</a>
+    <a class="topbar-cta" href="/logout">로그아웃</a>
+  </nav>
+</header>
+
+<div class="layout">
+  <div class="page-title">Settings</div>
+  <p class="page-sub">AI 모델 및 비밀번호를 관리합니다</p>
+
+  <!-- AI Model Selection -->
+  <form method="POST">
+    <input type="hidden" name="action" value="change_model">
+    <div class="field">
+      <label class="field-label">AI 모델</label>
+      <div class="radio-group">
+        {% for key, value in models.items() %}
+        <label class="radio-option {% if current_model == value %}radio-active{% endif %}">
+          <input type="radio" name="ai_model" value="{{ key }}" {% if current_model == value %}checked{% endif %}>
+          <span class="radio-label">{{ key.upper() }}</span>
+          <span class="radio-desc">{{ value }}</span>
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+    <button class="save-btn" type="submit">모델 변경 <span>→</span></button>
+  </form>
+
+  <div class="divider"></div>
+
+  <!-- Password Change -->
+  <form method="POST">
+    <input type="hidden" name="action" value="change_password">
+    <div class="field">
+      <label class="field-label" for="current_password">현재 비밀번호</label>
+      <input class="field-input" type="password" id="current_password" name="current_password" required>
+    </div>
+
+    <div class="field" style="margin-top:20px">
+      <label class="field-label" for="new_password">새 비밀번호</label>
+      <input class="field-input" type="password" id="new_password" name="new_password"
+             placeholder="4자 이상" required minlength="4">
+    </div>
+
+    <div class="field">
+      <label class="field-label" for="confirm_password">새 비밀번호 확인</label>
+      <input class="field-input" type="password" id="confirm_password" name="confirm_password" required minlength="4">
+    </div>
+
+    <button class="save-btn" type="submit">비밀번호 변경 <span>→</span></button>
+  </form>
+
+  {% if result %}
+  <div class="result-msg {{ 'result-ok' if result.ok else 'result-err' }}">
+    {{ result.msg }}
+  </div>
+  {% endif %}
+</div>
+
+</body>
+</html>

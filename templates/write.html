@@ -1,0 +1,1079 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AutoBlog — 글 생성</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  min-height: 100vh;
+  background: #F5F1EB;
+  font-family: 'Noto Sans KR', sans-serif;
+  color: #141210;
+}
+body::after {
+  content: '';
+  position: fixed; inset: 0; pointer-events: none; z-index: 999;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23g)' opacity='0.025'/%3E%3C/svg%3E");
+}
+
+/* ═══ TOPBAR ═══ */
+.topbar {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 0 44px; height: 56px;
+  border-bottom: 1px solid rgba(20,18,16,0.09);
+}
+.brand { display: flex; align-items: baseline; gap: 9px; text-decoration: none; color: inherit; }
+.brand-name { font-family: 'Bebas Neue', cursive; font-size: 22px; letter-spacing: 0.14em; }
+.brand-ver {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase;
+  color: #9B958E; background: rgba(20,18,16,0.07); padding: 2px 7px; border-radius: 3px;
+}
+.back-link {
+  font-size: 11px; font-weight: 500; letter-spacing: 0.1em;
+  color: #9B958E; text-decoration: none; transition: color 0.2s;
+}
+.back-link:hover { color: #141210; }
+
+/* ═══ LAYOUT ═══ */
+.layout {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 40px 24px 80px;
+}
+
+/* ═══ PLATFORM HEADER ═══ */
+.plat-header {
+  display: flex; align-items: flex-end; gap: 14px;
+  margin-bottom: 32px;
+  animation: riseUp 0.5s ease both;
+}
+.plat-letter {
+  font-family: 'Bebas Neue', cursive;
+  font-size: 64px; line-height: 0.82; letter-spacing: -0.01em;
+}
+.plat-letter.c-t { color: #E8470A; }
+.plat-letter.c-n { color: #03C75A; }
+.plat-letter.c-w { color: #2563EB; }
+.plat-info { display: flex; flex-direction: column; gap: 3px; padding-bottom: 6px; }
+.plat-name {
+  font-family: 'Bebas Neue', cursive;
+  font-size: 22px; letter-spacing: 0.06em; line-height: 1;
+}
+.plat-badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 9px; border-radius: 4px;
+  font-size: 9px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+  width: fit-content;
+}
+.plat-badge.c-t { background: rgba(232,71,10,0.1); color: #E8470A; }
+.plat-badge.c-n { background: rgba(3,199,90,0.1);  color: #00A847; }
+.plat-badge.c-w { background: rgba(37,99,235,0.1); color: #2563EB; }
+
+/* ═══ STEPS ═══ */
+.step {
+  display: none;
+  animation: riseUp 0.35s ease both;
+}
+.step.active { display: block; }
+.step-label {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase;
+  color: #9B958E; margin-bottom: 14px;
+}
+
+/* ═══ SELECTION CARDS ═══ */
+.sel-grid {
+  display: grid; gap: 10px;
+}
+.sel-grid.cols-2 { grid-template-columns: 1fr 1fr; }
+.sel-grid.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+.sel-card {
+  padding: 20px 18px;
+  background: #fff;
+  border: 2px solid rgba(20,18,16,0.08);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.sel-card:hover { border-color: rgba(20,18,16,0.2); transform: translateY(-2px); }
+.sel-card .card-title {
+  font-size: 15px; font-weight: 700; margin-bottom: 4px;
+}
+.sel-card .card-sub {
+  font-size: 11px; color: #9B958E; line-height: 1.5;
+}
+.sel-card.sel-t:hover, .sel-card.sel-t.selected { border-color: #E8470A; }
+.sel-card.sel-n:hover, .sel-card.sel-n.selected { border-color: #03C75A; }
+.sel-card.sel-w:hover, .sel-card.sel-w.selected { border-color: #2563EB; }
+
+/* ═══ KEYWORD INPUT ═══ */
+.kw-group { margin-bottom: 20px; }
+.kw-input {
+  width: 100%;
+  padding: 14px 16px;
+  background: #fff;
+  border: 2px solid rgba(20,18,16,0.08);
+  border-radius: 10px;
+  font-size: 15px; font-family: inherit; color: #141210;
+  outline: none; transition: border-color 0.2s;
+}
+.kw-input:focus { border-color: var(--accent); }
+#modelSelect:focus { border-color: var(--c, #141210); }
+.kw-input::placeholder { color: #C4BFB8; }
+
+/* ═══ BUTTONS ═══ */
+.btn-primary {
+  width: 100%;
+  padding: 14px;
+  border: none; border-radius: 10px;
+  font-size: 13px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+  color: #fff; cursor: pointer;
+  transition: transform 0.2s, opacity 0.2s;
+}
+.btn-primary:hover { transform: translateY(-1px); opacity: 0.9; }
+.btn-primary:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+.btn-primary.c-t { background: #E8470A; }
+.btn-primary.c-n { background: #03C75A; }
+.btn-primary.c-w { background: #2563EB; }
+
+.btn-back {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 14px;
+  background: none; border: 1px solid rgba(20,18,16,0.12);
+  border-radius: 6px; cursor: pointer;
+  font-size: 11px; font-weight: 500; color: #9B958E;
+  transition: all 0.2s; margin-bottom: 16px;
+}
+.btn-back:hover { border-color: rgba(20,18,16,0.3); color: #141210; }
+
+/* ═══ SPINNER ═══ */
+.spinner {
+  display: inline-block; width: 16px; height: 16px;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-top-color: #fff; border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+  vertical-align: middle; margin-right: 8px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ═══ ERROR ═══ */
+.error-msg {
+  background: #FEF2F2; border: 1px solid #FECACA; color: #991B1B;
+  padding: 10px 14px; border-radius: 8px; font-size: 13px;
+  margin-bottom: 14px; display: none;
+}
+
+/* ═══ RESULT ═══ */
+.result-section { display: none; animation: riseUp 0.4s ease both; }
+.result-section.visible { display: block; }
+
+.result-card {
+  background: #fff;
+  border: 1px solid rgba(20,18,16,0.08);
+  border-radius: 12px;
+  padding: 28px 24px;
+  margin-top: 32px;
+}
+.result-label {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase;
+  color: #9B958E; margin-bottom: 12px;
+}
+.result-title-text {
+  font-size: 20px; font-weight: 900; line-height: 1.4;
+  margin-bottom: 16px; padding-bottom: 14px;
+  border-bottom: 1px solid rgba(20,18,16,0.07);
+}
+.result-body {
+  font-size: 14px; line-height: 1.9; color: #3D3A36;
+}
+.result-body h2 { font-size: 16px; font-weight: 700; color: #141210; margin: 24px 0 10px; }
+.result-body h3 { font-size: 15px; font-weight: 600; color: #141210; margin: 18px 0 8px; }
+.result-body p { margin-bottom: 12px; }
+.result-body ul, .result-body ol { margin: 8px 0 12px 20px; }
+.result-body li { margin-bottom: 4px; }
+.result-body table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; }
+.result-body table th, .result-body table td {
+  padding: 8px 10px; border: 1px solid rgba(20,18,16,0.1); text-align: left;
+}
+.result-body table th { background: rgba(20,18,16,0.03); font-weight: 600; }
+.result-body img { max-width: 100%; height: auto; border-radius: 8px; margin: 8px 0; }
+
+/* tags */
+.result-tags {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  margin-top: 16px; padding-top: 14px;
+  border-top: 1px solid rgba(20,18,16,0.07);
+}
+.result-tags .tag {
+  padding: 4px 10px; border-radius: 5px;
+  font-size: 11px; font-weight: 500;
+  background: rgba(20,18,16,0.04); color: #6B6560;
+}
+
+/* title candidates */
+.title-cands {
+  margin-top: 16px; padding: 14px 16px;
+  background: rgba(20,18,16,0.025); border-radius: 8px;
+}
+.title-cands h4 {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.15em; text-transform: uppercase;
+  color: #9B958E; margin-bottom: 8px;
+}
+.title-cands p { font-size: 13px; line-height: 1.7; color: #3D3A36; margin-bottom: 2px; }
+
+/* action bar */
+.action-bar {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+  margin-top: 18px;
+}
+.action-btn {
+  padding: 10px;
+  background: #fff; border: 1px solid rgba(20,18,16,0.1);
+  border-radius: 8px; cursor: pointer;
+  font-size: 11px; font-weight: 600; color: #6B6560;
+  transition: all 0.2s; text-align: center;
+}
+.action-btn:hover { border-color: rgba(20,18,16,0.25); color: #141210; }
+
+/* publish section */
+.publish-section {
+  margin-top: 20px; padding-top: 18px;
+  border-top: 1px solid rgba(20,18,16,0.07);
+}
+.btn-publish {
+  width: 100%; padding: 14px;
+  border: none; border-radius: 10px;
+  font-size: 13px; font-weight: 700; letter-spacing: 0.1em;
+  color: #fff; background: #141210; cursor: pointer;
+  transition: transform 0.2s, opacity 0.2s;
+}
+.btn-publish:hover { transform: translateY(-1px); opacity: 0.85; }
+.btn-publish:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+.pipeline-status { margin-top: 14px; display: none; }
+.pipeline-status.visible { display: block; }
+.p-step {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 0; font-size: 12px;
+  border-bottom: 1px solid rgba(20,18,16,0.04);
+}
+.p-step:last-child { border-bottom: none; }
+.p-icon {
+  width: 20px; height: 20px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 9px; font-weight: 700; flex-shrink: 0;
+}
+.p-icon.pending  { background: rgba(20,18,16,0.06); color: #9B958E; }
+.p-icon.running  { background: #2563EB; color: #fff; animation: pulse 1s infinite; }
+.p-icon.success  { background: #03C75A; color: #fff; }
+.p-icon.failed   { background: #DC2626; color: #fff; }
+.p-icon.skipped  { background: #D97706; color: #fff; }
+.p-detail { margin-left: auto; font-size: 11px; color: #9B958E; }
+
+.post-url-box {
+  margin-top: 12px; padding: 10px 14px;
+  background: rgba(3,199,90,0.06); border: 1px solid rgba(3,199,90,0.2);
+  border-radius: 8px; display: none;
+}
+.post-url-box a { color: #03C75A; text-decoration: none; word-break: break-all; font-size: 13px; font-weight: 600; }
+.post-url-box a:hover { text-decoration: underline; }
+
+/* toast */
+.toast {
+  position: fixed; bottom: 24px; left: 50%;
+  transform: translateX(-50%) translateY(60px);
+  background: #141210; color: #fff;
+  padding: 10px 24px; border-radius: 8px;
+  font-size: 13px; font-weight: 600;
+  opacity: 0; transition: all 0.3s; z-index: 100;
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+@keyframes riseUp { from { opacity:0; transform:translateY(20px); } to { opacity:1; transform:translateY(0); } }
+@keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.5; } }
+
+/* ═══ EDIT MODE ═══ */
+.edit-bar {
+  display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap;
+}
+.edit-toggle {
+  padding: 8px 16px; border-radius: 6px; font-size: 11px; font-weight: 700;
+  letter-spacing: 0.06em; border: 2px solid #141210; background: #fff; color: #141210;
+  cursor: pointer; transition: all 0.2s;
+}
+.edit-toggle:hover { background: #141210; color: #fff; }
+.edit-toggle.active { background: #141210; color: #fff; }
+.edit-hint { font-size: 11px; color: #9B958E; align-self: center; }
+
+/* title edit */
+.result-title-text[contenteditable="true"] {
+  outline: 2px dashed rgba(20,18,16,0.2); outline-offset: 4px;
+  border-radius: 4px; min-height: 1.4em;
+}
+
+/* body editor */
+.body-editor {
+  display: none; width: 100%; min-height: 400px; padding: 16px;
+  font-family: 'Courier New', monospace; font-size: 13px; line-height: 1.7;
+  border: 2px solid rgba(20,18,16,0.12); border-radius: 10px;
+  background: #FAFAF8; color: #141210; resize: vertical; tab-size: 2;
+}
+.body-editor:focus { outline: none; border-color: var(--c, #141210); }
+
+/* image overlay */
+.img-edit-wrap {
+  position: relative; display: inline-block; max-width: 100%;
+}
+.img-edit-overlay {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  gap: 8px; background: rgba(20,18,16,0.55); border-radius: 8px;
+  opacity: 0; transition: opacity 0.2s; cursor: pointer;
+}
+.img-edit-wrap:hover .img-edit-overlay { opacity: 1; }
+.img-edit-btn {
+  padding: 6px 14px; border-radius: 5px; border: none; font-size: 11px; font-weight: 700;
+  cursor: pointer; transition: transform 0.15s;
+}
+.img-edit-btn:hover { transform: scale(1.05); }
+.img-edit-btn.replace { background: #fff; color: #141210; }
+.img-edit-btn.remove  { background: #DC2626; color: #fff; }
+
+/* image modal */
+.img-modal-backdrop {
+  position: fixed; inset: 0; background: rgba(20,18,16,0.5);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 200; animation: fadeIn 0.15s ease;
+}
+.img-modal {
+  background: #fff; border-radius: 14px; padding: 28px; width: 440px; max-width: 92vw;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+}
+.img-modal h3 { font-size: 16px; font-weight: 700; margin-bottom: 18px; }
+.img-modal-field { margin-bottom: 14px; }
+.img-modal-field label {
+  display: block; font-size: 10px; font-weight: 700; letter-spacing: 0.12em;
+  text-transform: uppercase; color: #9B958E; margin-bottom: 6px;
+}
+.img-modal-field input {
+  width: 100%; padding: 10px 14px; border: 1px solid rgba(20,18,16,0.15);
+  border-radius: 8px; font-size: 13px; font-family: inherit; outline: none;
+}
+.img-modal-field input:focus { border-color: #141210; }
+.img-modal-preview {
+  margin: 12px 0; text-align: center; min-height: 60px;
+}
+.img-modal-preview img {
+  max-width: 100%; max-height: 200px; border-radius: 8px;
+}
+.img-modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+.img-modal-actions button {
+  padding: 9px 20px; border-radius: 7px; font-size: 12px; font-weight: 700;
+  cursor: pointer; border: 1px solid rgba(20,18,16,0.15); background: #fff; color: #141210;
+  transition: all 0.2s;
+}
+.img-modal-actions button:hover { border-color: #141210; }
+.img-modal-actions button.primary { background: #141210; color: #fff; border-color: #141210; }
+.img-modal-actions button.primary:hover { opacity: 0.85; }
+.unsplash-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px;
+}
+.unsplash-thumb {
+  width: 100%; aspect-ratio: 3/2; object-fit: cover; border-radius: 6px;
+  cursor: pointer; border: 2px solid transparent; transition: border-color 0.2s;
+}
+.unsplash-thumb:hover { border-color: #141210; }
+.unsplash-thumb.selected { border-color: #E8470A; }
+
+@keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
+
+/* ═══ MOBILE / TOUCH ═══ */
+
+/* 모바일에서 이미지 오버레이 항상 표시 (hover 없으므로) */
+@media (hover: none) {
+  .img-edit-overlay {
+    opacity: 1; background: rgba(20,18,16,0.35);
+  }
+  .img-edit-btn { padding: 10px 18px; font-size: 13px; }
+}
+
+@media (max-width: 600px) {
+  .topbar { padding: 0 16px; }
+  .topbar .brand-name { font-size: 18px; }
+  .topbar nav { gap: 10px; }
+  .back-link { font-size: 10px; }
+  .layout { padding: 20px 14px 70px; }
+  .sel-grid.cols-3 { grid-template-columns: 1fr; }
+  .sel-grid.cols-2 { grid-template-columns: 1fr; }
+
+  /* 결과 카드 */
+  .result-card { padding: 20px 16px; }
+  .result-title-text { font-size: 17px; }
+  .result-title-text[contenteditable="true"] { outline-offset: 2px; padding: 4px; }
+
+  /* 편집 바 */
+  .edit-bar { gap: 6px; }
+  .edit-toggle { padding: 10px 16px; font-size: 12px; width: 100%; text-align: center; }
+
+  /* 본문 에디터 */
+  .body-editor {
+    font-family: 'Noto Sans KR', sans-serif; font-size: 14px;
+    min-height: 300px; padding: 14px; line-height: 1.8;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  /* 액션 바 */
+  .action-bar { grid-template-columns: 1fr; gap: 6px; }
+  .action-btn { padding: 12px; font-size: 12px; }
+
+  /* 이미지 오버레이 버튼 크기 */
+  .img-edit-btn { padding: 10px 20px; font-size: 13px; border-radius: 7px; }
+
+  /* 모달 - 하단 시트 스타일 */
+  .img-modal-backdrop { align-items: flex-end; }
+  .img-modal {
+    width: 100%; max-width: 100vw; border-radius: 18px 18px 0 0;
+    padding: 24px 18px 32px; max-height: 85vh; overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    animation: slideUp 0.25s ease;
+  }
+  .img-modal h3 { font-size: 17px; margin-bottom: 14px; }
+  .img-modal-field input { padding: 12px 14px; font-size: 15px; }
+  .img-modal-actions { flex-direction: column; }
+  .img-modal-actions button { width: 100%; padding: 13px; font-size: 14px; text-align: center; }
+  .unsplash-grid { grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .unsplash-thumb { border-radius: 5px; }
+
+  /* 발행 */
+  .btn-publish { font-size: 14px; padding: 16px; }
+  .p-step { font-size: 13px; padding: 10px 0; }
+}
+
+/* 작은 모바일 (SE 등) */
+@media (max-width: 380px) {
+  .unsplash-grid { grid-template-columns: repeat(2, 1fr); }
+  .img-modal { padding: 18px 14px 28px; }
+}
+
+@keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <a class="brand" href="/">
+    <span class="brand-name">AutoBlog</span>
+    <span class="brand-ver">v2.0</span>
+  </a>
+  <nav style="display:flex;align-items:center;gap:18px;">
+    <a class="back-link" href="/keywords">키워드 수집</a>
+    <a class="back-link" href="/">← 플랫폼 선택</a>
+  </nav>
+</header>
+
+<div class="layout">
+  <!-- Platform header -->
+  <div class="plat-header" id="platHeader"></div>
+
+  <!-- Step 1: Category / Subtype -->
+  <div class="step active" id="step1">
+    <div class="step-label" id="step1Label">Step 1 — 주제 선택</div>
+    <div id="step1Options"></div>
+  </div>
+
+  <!-- Step 2: Writing mode (tistory/naver only) -->
+  <div class="step" id="step2">
+    <button class="btn-back" onclick="goBack(1)">← 이전</button>
+    <div class="step-label">Step 2 — 글쓰기 모드</div>
+    <div class="sel-grid cols-2">
+      <div class="sel-card" id="modeCard1" onclick="selectMode('informative')">
+        <div class="card-title">정보성</div>
+        <div class="card-sub">객관적이고 신뢰감 있는 톤</div>
+      </div>
+      <div class="sel-card" id="modeCard2" onclick="selectMode('experience')">
+        <div class="card-title">체험형</div>
+        <div class="card-sub">1인칭 경험담, 솔직하고 생생한 톤</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step: Keyword input -->
+  <div class="step" id="stepKeyword">
+    <button class="btn-back" id="kwBack" onclick="goBack(2)">← 이전</button>
+    <div class="step-label" id="kwStepLabel">Step 3 — 키워드 입력</div>
+    <div class="kw-group">
+      <input type="text" class="kw-input" id="keyword"
+             placeholder="예: 서울 카페 추천, 재택근무 팁 ..." autofocus
+             style="--accent: var(--c);">
+    </div>
+    <div class="model-select" style="margin-bottom:14px;">
+      <label style="font-size:10px;font-weight:700;letter-spacing:0.18em;text-transform:uppercase;color:#9B958E;display:block;margin-bottom:8px;">AI 모델</label>
+      <select id="modelSelect" style="width:100%;padding:12px 14px;font-size:14px;font-family:inherit;border:2px solid rgba(20,18,16,0.08);border-radius:10px;background:#fff;color:#141210;outline:none;cursor:pointer;transition:border-color 0.2s;appearance:none;background-image:url('data:image/svg+xml,<%3Fxml version=%221.0%22%3F><svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2212%22 height=%2212%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%239B958E%22 stroke-width=%222%22><polyline points=%226 9 12 15 18 9%22/></svg>');background-repeat:no-repeat;background-position:right 14px center;">
+        <option value="claude-haiku-4-5-20251001">HAIKU — 빠르고 경제적</option>
+        <option value="claude-sonnet-4-6">SONNET — 고품질</option>
+      </select>
+    </div>
+    <div class="error-msg" id="errorMsg"></div>
+    <button class="btn-primary" id="generateBtn" onclick="generate()">
+      글 생성하기
+    </button>
+  </div>
+
+  <!-- Result -->
+  <div class="result-section" id="resultSection">
+    <div class="result-card">
+      <div class="edit-bar">
+        <div class="result-label" style="margin:0;align-self:center;flex:1;">생성 완료</div>
+        <button class="edit-toggle" id="editToggle" onclick="toggleEditMode()">편집 모드</button>
+      </div>
+      <div class="result-title-text" id="resultTitle"></div>
+      <div id="imageSection" style="display:none; margin-bottom:16px;">
+        <img id="resultImage" src="" alt="" style="max-width:100%;border-radius:10px;">
+      </div>
+      <div class="result-body" id="resultBody"></div>
+      <textarea class="body-editor" id="bodyEditor"></textarea>
+      <div class="result-tags" id="resultTags"></div>
+      <div class="title-cands" id="titleCands" style="display:none;">
+        <h4>제목 후보</h4>
+        <div id="titleCandsContent"></div>
+      </div>
+      <div class="action-bar">
+        <button class="action-btn" onclick="copyTitle()">제목 복사</button>
+        <button class="action-btn" onclick="copyFullHTML()">전체 HTML 복사</button>
+        <button class="action-btn" onclick="copyBody()">본문 HTML 복사</button>
+        <button class="action-btn" onclick="copyBodyText()">본문 텍스트 복사</button>
+      </div>
+
+      <!-- Publish & Index (wordpress only initially visible, but works for all) -->
+      <div class="publish-section" id="publishSection" style="display:none;">
+        <button class="btn-publish" id="publishBtn" onclick="publishAndIndex()">
+          WordPress 발행 & 색인 등록
+        </button>
+        <div class="pipeline-status" id="pipelineStatus">
+          <div class="p-step"><span class="p-icon pending" id="pIcon1">1</span> WordPress 발행 <span class="p-detail" id="pDetail1">대기</span></div>
+          <div class="p-step"><span class="p-icon pending" id="pIcon2">2</span> IndexNow (Bing/Naver) <span class="p-detail" id="pDetail2">대기</span></div>
+          <div class="p-step"><span class="p-icon pending" id="pIcon3">3</span> Google Indexing <span class="p-detail" id="pDetail3">대기</span></div>
+        </div>
+        <div class="post-url-box" id="postUrlBox">
+          발행 완료: <a id="postUrlLink" href="#" target="_blank"></a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const PLATFORM = '{{ platform }}';
+const CURRENT_MODEL = '{{ current_model }}';
+document.addEventListener('DOMContentLoaded', function() {
+  var sel = document.getElementById('modelSelect');
+  if (sel && CURRENT_MODEL) sel.value = CURRENT_MODEL;
+});
+
+const PLAT_CFG = {
+  tistory:   { letter:'T', name:'Tistory',   badge:'HTML 소스 생성', cls:'c-t', color:'#E8470A' },
+  naver:     { letter:'N', name:'Naver',      badge:'텍스트 + 이미지', cls:'c-n', color:'#03C75A' },
+  wordpress: { letter:'W', name:'WordPress',  badge:'자동 발행 연동', cls:'c-w', color:'#2563EB' },
+};
+
+let category = '';
+let subtype = '';
+let tone = 'informative';
+let currentData = {};
+
+const cfg = PLAT_CFG[PLATFORM];
+
+// Set CSS variable
+document.documentElement.style.setProperty('--c', cfg.color);
+
+// Platform header
+document.getElementById('platHeader').innerHTML = `
+  <div class="plat-letter ${cfg.cls}">${cfg.letter}</div>
+  <div class="plat-info">
+    <div class="plat-name">${cfg.name}</div>
+    <div class="plat-badge ${cfg.cls}">${cfg.badge}</div>
+  </div>
+`;
+
+// Color the generate button
+document.getElementById('generateBtn').classList.add(cfg.cls);
+
+// Build step 1 based on platform
+function initStep1() {
+  const el = document.getElementById('step1Options');
+  const cardCls = 'sel-' + PLATFORM[0];
+
+  if (PLATFORM === 'tistory') {
+    // 티스토리: 주제 자동 감지 → 바로 키워드 입력
+    category = 'it';  // 통합 프롬프트 사용 (어떤 값이든 동일)
+    tone = 'informative';
+    document.getElementById('step1').classList.remove('active');
+    document.getElementById('stepKeyword').classList.add('active');
+    document.getElementById('kwStepLabel').textContent = '키워드를 입력하면 AI가 주제를 자동 감지합니다';
+    document.getElementById('kwBack').style.display = 'none';
+  } else if (PLATFORM === 'naver') {
+    // 네이버는 살림블로그 고정 → 바로 모드 선택
+    category = 'living';
+    document.getElementById('step1').classList.remove('active');
+    document.getElementById('step2').classList.add('active');
+    document.getElementById('step2').querySelector('.btn-back').style.display = 'none';
+    document.querySelector('#step2 .step-label').textContent = 'Step 1 — 글쓰기 모드';
+    document.getElementById('kwStepLabel').textContent = 'Step 2 — 키워드 입력';
+    document.getElementById('kwBack').setAttribute('onclick', 'goBack(2)');
+  } else if (PLATFORM === 'wordpress') {
+    document.getElementById('step1Label').textContent = 'Step 1 — 글 유형 선택';
+    el.innerHTML = `
+      <div class="sel-grid cols-2">
+        <div class="sel-card sel-w" onclick="selectTopic('government')">
+          <div class="card-title">정부지원금</div>
+          <div class="card-sub">지원금·보조금·정책 안내</div>
+        </div>
+        <div class="sel-card sel-w" onclick="selectTopic('review')">
+          <div class="card-title">리뷰</div>
+          <div class="card-sub">제품·서비스 리뷰</div>
+        </div>
+        <div class="sel-card sel-w" onclick="selectTopic('walkthrough')">
+          <div class="card-title">공략</div>
+          <div class="card-sub">단계별 가이드</div>
+        </div>
+        <div class="sel-card sel-w" onclick="selectTopic('tips')">
+          <div class="card-title">팁 / 랭킹</div>
+          <div class="card-sub">추천·비교·순위</div>
+        </div>
+      </div>`;
+  }
+}
+
+function selectTopic(t) {
+  if (PLATFORM === 'wordpress') {
+    subtype = t;
+    category = (t === 'government') ? 'government' : 'it';
+    // 워드프레스: 유형 → 모드 선택 → 키워드
+    document.querySelector('#step2 .step-label').textContent = 'Step 2 — 글쓰기 모드';
+    document.getElementById('kwStepLabel').textContent = 'Step 3 — 키워드 입력';
+    document.getElementById('kwBack').setAttribute('onclick', 'goBack(2)');
+    // 모드 카드에 플랫폼 색상 적용
+    document.getElementById('modeCard1').className = 'sel-card sel-w';
+    document.getElementById('modeCard2').className = 'sel-card sel-w';
+    showStep('step2');
+  } else {
+    category = t;
+    showStep('step2');
+  }
+}
+
+function selectMode(m) {
+  tone = m;
+  showStep('stepKeyword');
+  document.getElementById('keyword').focus();
+}
+
+function showStep(id) {
+  document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+function goBack(toStep) {
+  if (toStep === 1) {
+    category = '';
+    subtype = '';
+    tone = 'informative';
+    showStep('step1');
+  } else if (toStep === 2) {
+    tone = 'informative';
+    showStep('step2');
+  }
+}
+
+document.getElementById('keyword').addEventListener('keydown', e => {
+  if (e.key === 'Enter') generate();
+});
+
+async function generate() {
+  const keyword = document.getElementById('keyword').value.trim();
+  if (!keyword) { showError('키워드를 입력해주세요.'); return; }
+
+  const btn = document.getElementById('generateBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>생성 중... (30초~1분)';
+  hideError();
+  document.getElementById('resultSection').classList.remove('visible');
+
+  try {
+    const res = await fetch('/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keyword, platform: PLATFORM, tone, category, subtype, model: document.getElementById('modelSelect').value })
+    });
+    const data = await res.json();
+    if (!res.ok) { showError(data.error || '생성에 실패했습니다.'); return; }
+
+    currentData = data;
+    document.getElementById('resultTitle').textContent = data.title;
+    document.getElementById('resultBody').innerHTML = data.body;
+
+    // Tags
+    const tagsEl = document.getElementById('resultTags');
+    tagsEl.innerHTML = '';
+    if (data.tags) {
+      data.tags.split(',').forEach(t => {
+        const tag = t.trim();
+        if (tag) {
+          const span = document.createElement('span');
+          span.className = 'tag';
+          span.textContent = '#' + tag;
+          tagsEl.appendChild(span);
+        }
+      });
+    }
+
+    // Title candidates
+    const tcEl = document.getElementById('titleCands');
+    const tcContent = document.getElementById('titleCandsContent');
+    if (data.title_candidates) {
+      tcContent.innerHTML = '';
+      data.title_candidates.split('\n').forEach(line => {
+        const l = line.trim();
+        if (l) {
+          const p = document.createElement('p');
+          p.textContent = l;
+          tcContent.appendChild(p);
+        }
+      });
+      tcEl.style.display = 'block';
+    } else {
+      tcEl.style.display = 'none';
+    }
+
+    // Thumbnail
+    const imgSection = document.getElementById('imageSection');
+    if (data.thumbnail) {
+      document.getElementById('resultImage').src = data.thumbnail;
+      imgSection.style.display = 'block';
+    } else {
+      imgSection.style.display = 'none';
+    }
+
+    // Show publish section for wordpress
+    document.getElementById('publishSection').style.display =
+      (PLATFORM === 'wordpress') ? 'block' : 'none';
+
+    document.getElementById('resultSection').classList.add('visible');
+    document.getElementById('resultSection').scrollIntoView({ behavior: 'smooth' });
+
+  } catch (err) {
+    showError('네트워크 오류가 발생했습니다.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '글 생성하기';
+  }
+}
+
+// ═══ Publish & Index ═══
+function updateStep(n, status, detail) {
+  document.getElementById('pIcon' + n).className = 'p-icon ' + status;
+  document.getElementById('pDetail' + n).textContent = detail;
+}
+
+async function publishAndIndex() {
+  if (!currentData.title || !currentData.body) return;
+
+  const btn = document.getElementById('publishBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>발행 중...';
+
+  const ps = document.getElementById('pipelineStatus');
+  ps.classList.add('visible');
+  document.getElementById('postUrlBox').style.display = 'none';
+  updateStep(1, 'running', '발행 중...');
+  updateStep(2, 'pending', '대기');
+  updateStep(3, 'pending', '대기');
+
+  try {
+    const res = await fetch('/publish-and-index', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: currentData.title,
+        body: currentData.body,
+        tags: currentData.tags || '',
+        category, subtype,
+        thumbnail: currentData.thumbnail || ''
+      })
+    });
+    const result = await res.json();
+
+    if (!res.ok) {
+      updateStep(1, 'failed', result.error || '실패');
+      showToast('발행에 실패했습니다');
+      return;
+    }
+
+    for (const s of (result.steps || [])) {
+      if (s.step === 'WordPress 발행') {
+        updateStep(1, s.status, s.status === 'success' ? '완료' : (s.error || '실패'));
+      } else if (s.step.includes('IndexNow')) {
+        const cur = document.getElementById('pDetail2').textContent;
+        const svc = s.step.match(/\((.+)\)/)?.[1] || '';
+        const r = s.status === 'success' ? svc + ' OK' : svc + ' 실패';
+        const next = (cur === '대기' || cur === '처리 중...') ? r : cur + ', ' + r;
+        updateStep(2, next.includes('실패') ? 'failed' : 'success', next);
+      } else if (s.step === 'Google Indexing') {
+        if (s.status === 'success') updateStep(3, 'success', '완료');
+        else if (s.status === 'skipped') updateStep(3, 'skipped', s.error || '건너뜀');
+        else updateStep(3, 'failed', s.error || '실패');
+      }
+    }
+
+    if (result.post_url) {
+      const box = document.getElementById('postUrlBox');
+      const link = document.getElementById('postUrlLink');
+      link.href = result.post_url;
+      link.textContent = result.post_url;
+      box.style.display = 'block';
+    }
+    showToast('발행 & 색인 등록 완료!');
+
+  } catch (err) {
+    updateStep(1, 'failed', '네트워크 오류');
+    showToast('네트워크 오류가 발생했습니다');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'WordPress 발행 & 색인 등록';
+  }
+}
+
+// ═══ Edit Mode ═══
+let editMode = false;
+let editingImg = null; // the <img> element being replaced
+
+function toggleEditMode() {
+  editMode = !editMode;
+  const btn = document.getElementById('editToggle');
+  const bodyEl = document.getElementById('resultBody');
+  const editor = document.getElementById('bodyEditor');
+  const titleEl = document.getElementById('resultTitle');
+
+  if (editMode) {
+    btn.classList.add('active');
+    btn.textContent = '편집 완료';
+    // title editable
+    titleEl.contentEditable = 'true';
+    // show source editor, hide preview
+    editor.value = currentData.body || '';
+    editor.style.display = 'block';
+    bodyEl.style.display = 'none';
+    // image overlays
+    addImageOverlays();
+  } else {
+    btn.classList.remove('active');
+    btn.textContent = '편집 모드';
+    // save title
+    currentData.title = titleEl.textContent.trim();
+    titleEl.contentEditable = 'false';
+    // save body
+    currentData.body = editor.value;
+    bodyEl.innerHTML = currentData.body;
+    editor.style.display = 'none';
+    bodyEl.style.display = '';
+    // remove overlays
+    removeImageOverlays();
+    showToast('편집 내용 저장됨');
+  }
+}
+
+function addImageOverlays() {
+  // Hero image
+  const heroImg = document.getElementById('resultImage');
+  if (heroImg && heroImg.src) wrapImage(heroImg);
+  // Body images (in editor mode, add a toolbar above editor)
+  // We handle body images via the source editor directly
+}
+
+function wrapImage(img) {
+  if (img.parentElement.classList.contains('img-edit-wrap')) return;
+  const wrap = document.createElement('div');
+  wrap.className = 'img-edit-wrap';
+  img.parentNode.insertBefore(wrap, img);
+  wrap.appendChild(img);
+
+  const overlay = document.createElement('div');
+  overlay.className = 'img-edit-overlay';
+  overlay.innerHTML = '<button class="img-edit-btn replace" onclick="event.stopPropagation();openImageModal(this)">교체</button>' +
+                      '<button class="img-edit-btn remove" onclick="event.stopPropagation();removeImage(this)">삭제</button>';
+  wrap.appendChild(overlay);
+}
+
+function removeImageOverlays() {
+  document.querySelectorAll('.img-edit-wrap').forEach(wrap => {
+    const img = wrap.querySelector('img');
+    const overlay = wrap.querySelector('.img-edit-overlay');
+    if (overlay) overlay.remove();
+    if (img) { wrap.parentNode.insertBefore(img, wrap); }
+    wrap.remove();
+  });
+}
+
+function removeImage(btnEl) {
+  const wrap = btnEl.closest('.img-edit-wrap');
+  const img = wrap.querySelector('img');
+  if (img.id === 'resultImage') {
+    document.getElementById('imageSection').style.display = 'none';
+    currentData.thumbnail = '';
+  }
+  wrap.remove();
+  showToast('이미지 삭제됨');
+}
+
+// ═══ Image Modal ═══
+function openImageModal(btnEl) {
+  const wrap = btnEl.closest('.img-edit-wrap');
+  editingImg = wrap.querySelector('img');
+  document.body.style.overflow = 'hidden'; // 배경 스크롤 방지
+  const backdrop = document.createElement('div');
+  backdrop.className = 'img-modal-backdrop';
+  backdrop.id = 'imgModalBackdrop';
+  backdrop.onclick = e => { if (e.target === backdrop) closeImageModal(); };
+  backdrop.innerHTML = `
+    <div class="img-modal">
+      <h3>이미지 교체</h3>
+      <div class="img-modal-field">
+        <label>직접 URL 입력</label>
+        <input type="text" id="imgUrlInput" placeholder="https://..." oninput="previewImgUrl()">
+      </div>
+      <div class="img-modal-preview" id="imgPreview"></div>
+      <div class="img-modal-field">
+        <label>Unsplash 검색</label>
+        <div style="display:flex;gap:8px;">
+          <input type="text" id="unsplashQuery" placeholder="키워드 (영문 권장)" style="flex:1;"
+                 onkeydown="if(event.key==='Enter')searchUnsplash()">
+          <button class="img-edit-btn replace" onclick="searchUnsplash()" style="flex-shrink:0;">검색</button>
+        </div>
+      </div>
+      <div class="unsplash-grid" id="unsplashGrid"></div>
+      <div class="img-modal-actions">
+        <button onclick="closeImageModal()">취소</button>
+        <button class="primary" onclick="applyImageChange()">적용</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(backdrop);
+  document.getElementById('imgUrlInput').focus();
+}
+
+function closeImageModal() {
+  const bd = document.getElementById('imgModalBackdrop');
+  if (bd) bd.remove();
+  document.body.style.overflow = '';
+  editingImg = null;
+}
+
+function previewImgUrl() {
+  const url = document.getElementById('imgUrlInput').value.trim();
+  const preview = document.getElementById('imgPreview');
+  if (url) {
+    preview.innerHTML = '<img src="' + esc(url) + '" onerror="this.parentElement.innerHTML=\'<span style=color:#9B958E;font-size:12px>이미지를 불러올 수 없습니다</span>\'">';
+  } else {
+    preview.innerHTML = '';
+  }
+  // deselect unsplash
+  document.querySelectorAll('.unsplash-thumb.selected').forEach(t => t.classList.remove('selected'));
+}
+
+let unsplashResults = [];
+async function searchUnsplash() {
+  const q = document.getElementById('unsplashQuery').value.trim();
+  if (!q) return;
+  const grid = document.getElementById('unsplashGrid');
+  grid.innerHTML = '<span style="font-size:12px;color:#9B958E;grid-column:1/-1;">검색 중...</span>';
+  try {
+    const res = await fetch('/api/unsplash-search?q=' + encodeURIComponent(q));
+    const data = await res.json();
+    unsplashResults = data.results || [];
+    if (!unsplashResults.length) {
+      grid.innerHTML = '<span style="font-size:12px;color:#9B958E;grid-column:1/-1;">결과 없음</span>';
+      return;
+    }
+    grid.innerHTML = unsplashResults.map((r, i) =>
+      '<img class="unsplash-thumb" src="' + esc(r.thumb) + '" data-idx="' + i + '" onclick="selectUnsplash(this,' + i + ')">'
+    ).join('');
+  } catch (e) {
+    grid.innerHTML = '<span style="font-size:12px;color:#DC2626;grid-column:1/-1;">검색 실패</span>';
+  }
+}
+
+function selectUnsplash(el, idx) {
+  document.querySelectorAll('.unsplash-thumb.selected').forEach(t => t.classList.remove('selected'));
+  el.classList.add('selected');
+  document.getElementById('imgUrlInput').value = unsplashResults[idx].full;
+  document.getElementById('imgPreview').innerHTML = '<img src="' + esc(unsplashResults[idx].full) + '">';
+}
+
+function applyImageChange() {
+  const url = document.getElementById('imgUrlInput').value.trim();
+  if (!url) { showToast('URL을 입력하거나 이미지를 선택하세요'); return; }
+  if (editingImg) {
+    editingImg.src = url;
+    if (editingImg.id === 'resultImage') {
+      currentData.thumbnail = url;
+    }
+    // also update in source editor if open
+    // (user can manually adjust in the textarea)
+  }
+  closeImageModal();
+  showToast('이미지 교체됨');
+}
+
+// ═══ Copy functions ═══
+function copyTitle() {
+  navigator.clipboard.writeText(currentData.title || '');
+  showToast('제목 복사됨');
+}
+function copyBody() {
+  navigator.clipboard.writeText(currentData.body || '');
+  showToast('HTML 본문 복사됨');
+}
+function copyBodyText() {
+  const tmp = document.createElement('div');
+  tmp.innerHTML = currentData.body || '';
+  navigator.clipboard.writeText(tmp.textContent || '');
+  showToast('텍스트 본문 복사됨');
+}
+function copyFullHTML() {
+  let full = '';
+  if (currentData.thumbnail) {
+    full += '<img src="' + currentData.thumbnail + '" alt="' + (currentData.title || '') + '" style="max-width:100%;height:auto;border-radius:8px;">\n';
+  }
+  full += (currentData.body || '');
+  navigator.clipboard.writeText(full);
+  showToast('전체 HTML 복사됨');
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2000);
+}
+function showError(msg) {
+  const el = document.getElementById('errorMsg');
+  el.textContent = msg; el.style.display = 'block';
+}
+function hideError() {
+  document.getElementById('errorMsg').style.display = 'none';
+}
+
+// Init
+initStep1();
+
+// URL에서 keyword 파라미터 읽어서 자동 입력
+const urlKw = new URLSearchParams(window.location.search).get('keyword');
+if (urlKw) {
+  document.getElementById('keyword').value = urlKw;
+}
+</script>
+</body>
+</html>
