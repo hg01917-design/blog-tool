@@ -1,5 +1,23 @@
 .env
 __pycache__/
-static/images/
 *.pyc
 .venv/
+static/images/
+
+# Logs
+*.log
+access.log
+error.log
+
+# Runtime
+gunicorn.pid
+gunicorn.ctl
+
+# Backups
+*.bak
+
+# IDE / Claude
+.claude/
+
+# Data
+data/
