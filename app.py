@@ -878,21 +878,12 @@ def generate():
     # 3) 대표 이미지는 첫 번째, h2 이미지는 나머지 사용 (중복 방지, 최대 3장)
     thumbnail_url = ""
     if all_images:
-        thumbnail_url = all_images[0]["url"].split("?")[0] + "?w=1200&h=628&fit=crop&fm=webp&q=80"
+        thumbnail_url = all_images[0]["url"].split("?")[0] + "?w=800&h=800&fit=crop&fm=webp&q=80"
         h2_images = all_images[1:MAX_BODY_IMAGES + 1]
     else:
         h2_images = []
     body = _insert_images_at_h2(body, keyword, h2_images)
-    # 대표 이미지를 HTML 최상단에 삽입
-    if thumbnail_url:
-        hero_img = (
-            f'<figure style="margin:0 0 1.5em 0;text-align:center;">'
-            f'<img src="{thumbnail_url}" alt="{keyword} 대표 이미지" '
-            f'style="max-width:100%;height:auto;border-radius:8px;" loading="lazy">'
-            f'</figure>\n'
-        )
-        body = hero_img + body
-    # thumbnail 변수는 result에서도 사용하므로 유지
+    # 대표 이미지는 WordPress featured_media로만 사용 (본문 삽입 제거로 중복 방지)
     # 4) 제목 주석을 HTML 최상단에 삽입
     body = f"<!-- 제목: {title} -->\n" + body
     # 5) 플랫폼별 AdSense 광고 삽입 (네이버는 애드센스 미지원)
