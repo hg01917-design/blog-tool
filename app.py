@@ -607,9 +607,145 @@ def unsplash_search():
         return jsonify({"results": []})
 
 
+def _strip_html(html_text: str) -> str:
+    """HTML에서 스크립트/스타일 제거 후 텍스트만 추출합니다."""
+    text = re.sub(r'<script[^>]*>.*?</script>', '', html_text, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r'<style[^>]*>.*?</style>', '', text, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r'<[^>]+>', ' ', text)
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text
+
+
+def _scrape_naver_blog(url: str) -> str:
+    """네이버 블로그 URL에서 본문 텍스트를 추출합니다."""
+    try:
+        resp = http_requests.get(url, timeout=15, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        })
+        resp.raise_for_status()
+        html = resp.text
+
+        # 네이버 블로그는 iframe 구조 — postViewArea에서 본문 추출 시도
+        iframe_match = re.search(r'src="(https://blog\.naver\.com/PostView\.naver[^"]+)"', html)
+        if iframe_match:
+            iframe_resp = http_requests.get(iframe_match.group(1), timeout=15, headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            })
+            iframe_resp.raise_for_status()
+            html = iframe_resp.text
+
+        # 본문 영역 추출 시도
+        body_match = re.search(
+            r'<div[^>]*class="[^"]*se-main-container[^"]*"[^>]*>(.*?)</div>\s*</div>\s*</div>',
+            html, flags=re.DOTALL
+        )
+        if not body_match:
+            body_match = re.search(
+                r'<div[^>]*id="postViewArea"[^>]*>(.*?)</div>',
+                html, flags=re.DOTALL
+            )
+        if body_match:
+            return _strip_html(body_match.group(1))[:5000]
+
+        return _strip_html(html)[:5000]
+    except Exception:
+        return ""
+
+
+@app.route("/api/crawl-competitors", methods=["POST"])
+def crawl_competitors():
+    """키워드로 네이버 블로그 상위 5개를 크롤링하여 팩트를 추출합니다."""
+    data = request.get_json()
+    keyword = data.get("keyword", "").strip()
+    if not keyword:
+        return jsonify({"error": "키워드를 입력해주세요."}), 400
+
+    # 네이버 블로그 검색 API (openapi 없이 검색페이지 파싱)
+    try:
+        search_url = "https://search.naver.com/search.naver"
+        resp = http_requests.get(search_url, params={
+            "where": "blog", "query": keyword, "sm": "tab_opt"
+        }, timeout=15, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        })
+        resp.raise_for_status()
+
+        # 블로그 URL 추출 (상위 5개)
+        urls = re.findall(r'href="(https://blog\.naver\.com/[^"]+)"', resp.text)
+        # 중복 제거하면서 순서 유지
+        seen = set()
+        unique_urls = []
+        for u in urls:
+            clean = u.split("?")[0]
+            if clean not in seen:
+                seen.add(clean)
+                unique_urls.append(u)
+            if len(unique_urls) >= 5:
+                break
+
+        if not unique_urls:
+            return jsonify({"error": "네이버 블로그 검색 결과가 없습니다.", "results": []}), 200
+
+    except Exception as e:
+        return jsonify({"error": f"네이버 검색 실패: {str(e)}"}), 400
+
+    # 각 블로그 크롤링 + 팩트 추출
+    results = []
+    all_contents = []
+    for i, blog_url in enumerate(unique_urls):
+        content = _scrape_naver_blog(blog_url)
+        if content:
+            all_contents.append(f"[글 {i+1}] {content[:1500]}")
+            results.append({"url": blog_url, "length": len(content)})
+
+    if not all_contents:
+        return jsonify({"error": "블로그 본문을 가져올 수 없습니다.", "results": []}), 200
+
+    # AI로 통합 팩트 추출
+    combined = "\n\n".join(all_contents)
+    try:
+        fact_resp = claude_client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=2000,
+            system="당신은 여러 블로그 글에서 공통된 팩트(사실 정보)를 추출·종합하는 전문가입니다.",
+            messages=[{"role": "user", "content": (
+                f"'{keyword}' 키워드로 검색한 네이버 블로그 상위 글 {len(all_contents)}개입니다.\n"
+                "이 글들에서 공통되거나 중요한 팩트를 종합해주세요.\n\n"
+                f"{combined[:8000]}\n\n"
+                "추출 항목 (있는 것만):\n"
+                "- 날짜/기간 (영업시간, 운영기간, 신청기한 등)\n"
+                "- 장소/위치 (주소, 교통편 등)\n"
+                "- 가격/비용 (입장료, 이용료, 할인 등)\n"
+                "- 연락처/링크 (전화번호, 공식 사이트 등)\n"
+                "- 조건/자격 (신청자격, 필요서류 등)\n"
+                "- 수치/통계 (면적, 수용인원, 평점 등)\n"
+                "- 공통 키포인트 (여러 글에서 반복적으로 언급되는 내용)\n\n"
+                "응답 형식:\n"
+                "---팩트---\n"
+                "각 항목을 '- 카테고리: 내용' 형식으로 나열\n"
+                "---요약---\n"
+                "상위 글들의 공통 주제와 차별화 포인트를 2~3문장으로 요약"
+            )}],
+        )
+        result_text = fact_resp.content[0].text.strip()
+
+        facts = ""
+        summary = ""
+        if "---팩트---" in result_text:
+            after_facts = result_text.split("---팩트---", 1)[1]
+            if "---요약---" in after_facts:
+                facts, summary = [p.strip() for p in after_facts.split("---요약---", 1)]
+            else:
+                facts = after_facts.strip()
+
+        return jsonify({"facts": facts, "summary": summary, "results": results, "count": len(all_contents)})
+    except anthropic.APIError as e:
+        return jsonify({"error": f"팩트 추출 실패: {e.message}"}), 500
+
+
 @app.route("/api/extract-facts", methods=["POST"])
 def extract_facts():
-    """경쟁 블로그 글에서 날짜/장소/가격 등 팩트를 AI로 추출합니다."""
+    """경쟁 블로그 글(URL 또는 텍스트)에서 날짜/장소/가격 등 팩트를 AI로 추출합니다."""
     data = request.get_json()
     content = data.get("content", "").strip()
     url = data.get("url", "").strip()
@@ -619,18 +755,20 @@ def extract_facts():
 
     # URL이 주어지면 본문 스크래핑
     if url and not content:
-        try:
-            resp = http_requests.get(url, timeout=15, headers={"User-Agent": "Mozilla/5.0"})
-            resp.raise_for_status()
-            # HTML에서 텍스트만 추출 (간단한 태그 제거)
-            html_text = resp.text
-            html_text = re.sub(r'<script[^>]*>.*?</script>', '', html_text, flags=re.DOTALL | re.IGNORECASE)
-            html_text = re.sub(r'<style[^>]*>.*?</style>', '', html_text, flags=re.DOTALL | re.IGNORECASE)
-            html_text = re.sub(r'<[^>]+>', ' ', html_text)
-            html_text = re.sub(r'\s+', ' ', html_text).strip()
-            content = html_text[:5000]  # 토큰 절약을 위해 5000자 제한
-        except Exception as e:
-            return jsonify({"error": f"URL 스크래핑 실패: {str(e)}"}), 400
+        if "blog.naver.com" in url:
+            content = _scrape_naver_blog(url)
+        else:
+            try:
+                resp = http_requests.get(url, timeout=15, headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                })
+                resp.raise_for_status()
+                content = _strip_html(resp.text)[:5000]
+            except Exception as e:
+                return jsonify({"error": f"URL 스크래핑 실패: {str(e)}"}), 400
+
+    if not content:
+        return jsonify({"error": "본문 내용을 가져올 수 없습니다."}), 400
 
     try:
         fact_resp = claude_client.messages.create(
@@ -654,12 +792,12 @@ def extract_facts():
                 "이 글의 핵심 주제를 1~2문장으로 요약"
             )}],
         )
-        result = fact_resp.content[0].text.strip()
+        result_text = fact_resp.content[0].text.strip()
 
         facts = ""
         summary = ""
-        if "---팩트---" in result:
-            after_facts = result.split("---팩트---", 1)[1]
+        if "---팩트---" in result_text:
+            after_facts = result_text.split("---팩트---", 1)[1]
             if "---요약---" in after_facts:
                 facts, summary = [p.strip() for p in after_facts.split("---요약---", 1)]
             else:

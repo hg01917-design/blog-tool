@@ -516,15 +516,36 @@ body::after {
     </div>
     <!-- 경쟁글 분석 -->
     <div style="margin-bottom:14px;">
-      <div onclick="document.getElementById('competitorSection').style.display=document.getElementById('competitorSection').style.display==='none'?'block':'none'" style="cursor:pointer;display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#9B958E;margin-bottom:8px;">
+      <div onclick="toggleCompetitor()" style="cursor:pointer;display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#9B958E;margin-bottom:8px;">
         <span id="compToggleIcon">▶</span> 경쟁글 분석 (선택)
       </div>
       <div id="competitorSection" style="display:none;">
-        <input type="text" id="competitorUrl" placeholder="경쟁글 URL 붙여넣기" style="width:100%;padding:10px 14px;font-size:13px;font-family:inherit;border:2px solid rgba(20,18,16,0.08);border-radius:10px;background:#fff;color:#141210;outline:none;margin-bottom:8px;box-sizing:border-box;">
-        <textarea id="competitorContent" placeholder="또는 경쟁글 내용 직접 붙여넣기" rows="4" style="width:100%;padding:10px 14px;font-size:13px;font-family:inherit;border:2px solid rgba(20,18,16,0.08);border-radius:10px;background:#fff;color:#141210;outline:none;resize:vertical;margin-bottom:8px;box-sizing:border-box;"></textarea>
-        <button onclick="extractFacts()" id="extractBtn" style="width:100%;padding:10px;font-size:13px;font-weight:600;font-family:inherit;border:2px solid rgba(20,18,16,0.15);border-radius:10px;background:#f8f7f6;color:#141210;cursor:pointer;">
-          팩트 추출하기
-        </button>
+        <!-- 탭 -->
+        <div style="display:flex;gap:0;margin-bottom:10px;border:2px solid rgba(20,18,16,0.08);border-radius:10px;overflow:hidden;">
+          <button id="tabAuto" onclick="switchCompTab('auto')" style="flex:1;padding:10px;font-size:13px;font-weight:600;font-family:inherit;border:none;cursor:pointer;background:#141210;color:#fff;transition:all 0.2s;">
+            자동 크롤링
+          </button>
+          <button id="tabManual" onclick="switchCompTab('manual')" style="flex:1;padding:10px;font-size:13px;font-weight:600;font-family:inherit;border:none;cursor:pointer;background:#f8f7f6;color:#9B958E;transition:all 0.2s;">
+            직접 입력
+          </button>
+        </div>
+        <!-- 자동 크롤링 탭 -->
+        <div id="compAuto">
+          <p style="font-size:12px;color:#9B958E;margin:0 0 8px 0;">키워드 입력 후 버튼을 누르면 네이버 블로그 상위 5개 글을 자동 분석합니다.</p>
+          <button onclick="crawlCompetitors()" id="crawlBtn" style="width:100%;padding:10px;font-size:13px;font-weight:600;font-family:inherit;border:2px solid rgba(20,18,16,0.15);border-radius:10px;background:#f8f7f6;color:#141210;cursor:pointer;">
+            네이버 상위 5개 크롤링
+          </button>
+          <div id="crawlStatus" style="display:none;margin-top:8px;font-size:12px;color:#9B958E;"></div>
+        </div>
+        <!-- 직접 입력 탭 -->
+        <div id="compManual" style="display:none;">
+          <input type="text" id="competitorUrl" placeholder="경쟁글 URL 붙여넣기" style="width:100%;padding:10px 14px;font-size:13px;font-family:inherit;border:2px solid rgba(20,18,16,0.08);border-radius:10px;background:#fff;color:#141210;outline:none;margin-bottom:8px;box-sizing:border-box;">
+          <textarea id="competitorContent" placeholder="또는 경쟁글 내용 직접 붙여넣기" rows="4" style="width:100%;padding:10px 14px;font-size:13px;font-family:inherit;border:2px solid rgba(20,18,16,0.08);border-radius:10px;background:#fff;color:#141210;outline:none;resize:vertical;margin-bottom:8px;box-sizing:border-box;"></textarea>
+          <button onclick="extractFacts()" id="extractBtn" style="width:100%;padding:10px;font-size:13px;font-weight:600;font-family:inherit;border:2px solid rgba(20,18,16,0.15);border-radius:10px;background:#f8f7f6;color:#141210;cursor:pointer;">
+            팩트 추출하기
+          </button>
+        </div>
+        <!-- 공통 결과 -->
         <div id="factsResult" style="display:none;margin-top:10px;padding:12px 14px;background:#f0efed;border-radius:10px;font-size:13px;line-height:1.6;white-space:pre-wrap;"></div>
       </div>
     </div>
@@ -711,8 +732,78 @@ document.getElementById('keyword').addEventListener('keydown', e => {
   if (e.key === 'Enter') generate();
 });
 
-// 경쟁글 팩트 추출
+// 경쟁글 분석
 let extractedFacts = '';
+
+function toggleCompetitor() {
+  const sec = document.getElementById('competitorSection');
+  const icon = document.getElementById('compToggleIcon');
+  if (sec.style.display === 'none') {
+    sec.style.display = 'block';
+    icon.textContent = '▼';
+  } else {
+    sec.style.display = 'none';
+    icon.textContent = '▶';
+  }
+}
+
+function switchCompTab(tab) {
+  const autoTab = document.getElementById('tabAuto');
+  const manualTab = document.getElementById('tabManual');
+  const autoDiv = document.getElementById('compAuto');
+  const manualDiv = document.getElementById('compManual');
+  if (tab === 'auto') {
+    autoTab.style.background = '#141210'; autoTab.style.color = '#fff';
+    manualTab.style.background = '#f8f7f6'; manualTab.style.color = '#9B958E';
+    autoDiv.style.display = 'block'; manualDiv.style.display = 'none';
+  } else {
+    manualTab.style.background = '#141210'; manualTab.style.color = '#fff';
+    autoTab.style.background = '#f8f7f6'; autoTab.style.color = '#9B958E';
+    manualDiv.style.display = 'block'; autoDiv.style.display = 'none';
+  }
+}
+
+async function crawlCompetitors() {
+  const keyword = document.getElementById('keyword').value.trim();
+  if (!keyword) { showError('먼저 키워드를 입력해주세요.'); return; }
+
+  const btn = document.getElementById('crawlBtn');
+  const statusDiv = document.getElementById('crawlStatus');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>상위 5개 크롤링 중...';
+  statusDiv.style.display = 'block';
+  statusDiv.textContent = '네이버 블로그 검색 + 본문 크롤링 + AI 팩트 추출 중...';
+
+  const resultDiv = document.getElementById('factsResult');
+  try {
+    const res = await fetch('/api/crawl-competitors', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keyword })
+    });
+    const data = await res.json();
+    if (!res.ok && !data.facts) { showError(data.error || '크롤링 실패'); return; }
+
+    let display = '';
+    if (data.count) display += '분석된 글: ' + data.count + '개\n';
+    if (data.results) {
+      data.results.forEach((r, i) => { display += (i+1) + '. ' + r.url + '\n'; });
+      display += '\n';
+    }
+    if (data.facts) display += data.facts;
+    if (data.summary) display += '\n\n요약: ' + data.summary;
+
+    extractedFacts = (data.facts || '') + (data.summary ? '\n요약: ' + data.summary : '');
+    resultDiv.textContent = display;
+    resultDiv.style.display = 'block';
+    statusDiv.textContent = '크롤링 완료! 글 생성 시 자동 반영됩니다.';
+  } catch (err) {
+    showError('크롤링 중 오류가 발생했습니다.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '네이버 상위 5개 크롤링';
+  }
+}
 
 async function extractFacts() {
   const url = document.getElementById('competitorUrl').value.trim();
