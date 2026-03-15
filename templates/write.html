@@ -952,7 +952,8 @@ async function publishAndIndex() {
         body: currentData.body,
         tags: currentData.tags || '',
         category, subtype,
-        thumbnail: currentData.thumbnail || ''
+        thumbnail: currentData.thumbnail || '',
+        focus_keyword: document.getElementById('keyword').value.trim()
       })
     });
     const result = await res.json();

@@ -1131,6 +1131,18 @@ def generate():
         else:
             body_prompt += meta_desc_instruction
 
+    # ── 구글 SEO 필수 규칙 (프롬프트 끝 추가) ──
+    body_prompt += (
+        "\n\n[구글 SEO 필수 규칙]\n"
+        f"1. 첫 문단 첫 문장에 반드시 포커스 키워드(\"{keyword}\")를 포함할 것\n"
+        "2. H태그 구조 준수: H2는 주요 섹션 제목, H3는 세부 항목(신청자격, 소득기준, 지원금액 등)\n"
+        "3. 표(Table) 사용 시: 표 바로 위에 캡션 문장 추가(예: \"2026년 청년지원금 주요 항목 비교표\"), 글 상단에 요약표 배치\n"
+        "4. 이미지 삽입 시 alt 태그에 포커스 키워드 포함\n"
+        f"5. 본문 내 포커스 키워드(\"{keyword}\")를 자연스럽게 3회 이상 포함\n"
+        "6. 글 하단에 내부 링크 유도 문구 1개 추가(예: \"관련 정보가 궁금하다면 아래 글도 확인해보세요\")\n"
+        "7. 소득기준 등 핵심 수치는 <blockquote> 인용구 블록으로 강조\n"
+    )
+
     try:
         if use_web_search:
             # 웹 검색(Haiku) → 본문 생성(Sonnet) 2단계
@@ -1665,9 +1677,14 @@ def publish_wordpress():
     category = data.get("category", "it")
     subtype = data.get("subtype", "")
     thumbnail_url = data.get("thumbnail", "")
+    focus_keyword = data.get("focus_keyword", "")
 
     if not title or not body:
         return jsonify({"error": "제목과 본문이 필요합니다."}), 400
+
+    # 포커스 키워드 fallback: 첫 번째 태그 사용
+    if not focus_keyword and tags_str:
+        focus_keyword = tags_str.split(",")[0].strip()
 
     steps = []
 
@@ -1690,14 +1707,25 @@ def publish_wordpress():
     tag_names = [t.strip() for t in tags_str.split(",") if t.strip()]
     tag_ids = _wp_get_or_create_tags(tag_names)
 
-    # 4) 글 발행
+    # 4) Rank Math SEO 메타 + 슬러그 준비
+    slug = re.sub(r'[^\w가-힣\s-]', '', focus_keyword).strip().replace(' ', '-')[:80] if focus_keyword else ""
+    meta_description = re.sub(r'<[^>]+>', '', body)[:155].strip() if body else ""
+
+    # 5) 글 발행
     post_data = {
         "title": title,
         "content": body,
         "status": "publish",
         "categories": categories,
         "tags": tag_ids,
+        "meta": {
+            "rank_math_focus_keyword": focus_keyword,
+            "rank_math_title": f"{title} - %sitename%",
+            "rank_math_description": meta_description,
+        },
     }
+    if slug:
+        post_data["slug"] = slug
     if featured_media_id:
         post_data["featured_media"] = featured_media_id
 
@@ -1825,9 +1853,14 @@ def publish_and_index():
     category = data.get("category", "it")
     subtype = data.get("subtype", "")
     thumbnail_url = data.get("thumbnail", "")
+    focus_keyword = data.get("focus_keyword", "")
 
     if not title or not body:
         return jsonify({"error": "제목과 본문이 필요합니다."}), 400
+
+    # 포커스 키워드 fallback: 첫 번째 태그 사용
+    if not focus_keyword and tags_str:
+        focus_keyword = tags_str.split(",")[0].strip()
 
     # 이미지 업로드
     featured_media_id = None
@@ -1842,19 +1875,31 @@ def publish_and_index():
     tag_names = [t.strip() for t in tags_str.split(",") if t.strip()]
     tag_ids = _wp_get_or_create_tags(tag_names)
 
+    # Rank Math SEO 메타 + 슬러그
+    slug = re.sub(r'[^\w가-힣\s-]', '', focus_keyword).strip().replace(' ', '-')[:80] if focus_keyword else ""
+    meta_description = re.sub(r'<[^>]+>', '', body)[:155].strip() if body else ""
+
+    post_data = {
+        "title": title,
+        "content": body,
+        "status": "publish",
+        "categories": categories,
+        "tags": tag_ids,
+        "meta": {
+            "rank_math_focus_keyword": focus_keyword,
+            "rank_math_title": f"{title} - %sitename%",
+            "rank_math_description": meta_description,
+        },
+        **({"slug": slug} if slug else {}),
+        **({"featured_media": featured_media_id} if featured_media_id else {}),
+    }
+
     post_url = ""
     try:
         resp = http_requests.post(
             f"{WP_URL}/wp-json/wp/v2/posts",
             headers={**_wp_auth_header(), "Content-Type": "application/json"},
-            json={
-                "title": title,
-                "content": body,
-                "status": "publish",
-                "categories": categories,
-                "tags": tag_ids,
-                **({"featured_media": featured_media_id} if featured_media_id else {}),
-            },
+            json=post_data,
             timeout=30,
         )
         if resp.status_code in (200, 201):
