@@ -1134,7 +1134,10 @@ def generate():
     # ── 구글 SEO 필수 규칙 (프롬프트 끝 추가) ──
     body_prompt += (
         "\n\n[구글 SEO 필수 규칙]\n"
-        f"1. 첫 문단 첫 문장에 반드시 포커스 키워드(\"{keyword}\")를 포함할 것\n"
+        "1. 도입부 필수: 본문은 반드시 도입부(3~5문장)로 시작할 것. "
+        "독자의 관심을 끄는 질문이나 공감 문장으로 시작하고, "
+        f"포커스 키워드(\"{keyword}\")를 도입부 안에 자연스럽게 포함시킬 것. "
+        "도입부를 생략하고 바로 정보나 표로 시작하지 말 것.\n"
         "2. H태그 구조 준수: H2는 주요 섹션 제목, H3는 세부 항목(신청자격, 소득기준, 지원금액 등)\n"
         "3. 표(Table) 사용 시: 표 바로 위에 캡션 문장 추가(예: \"2026년 청년지원금 주요 항목 비교표\"), 글 상단에 요약표 배치\n"
         "4. 이미지 삽입 시 alt 태그에 포커스 키워드 포함\n"
@@ -1166,6 +1169,10 @@ def generate():
         body = body.strip()
 
     # 본문 후처리
+    # 0) 마크다운 코드펜스 제거 (```html ... ``` 등)
+    body = re.sub(r'^```\w*\n?', '', body)
+    body = re.sub(r'\n?```$', '', body)
+    body = body.strip()
     # 1) 이미지/광고 플레이스홀더 및 JSON-LD 제거
     body = re.sub(r"\[이미지[^\]]*\]", "", body)
     body = re.sub(r"<!--\s*광고[^>]*-->", "", body)
@@ -1297,7 +1304,10 @@ def _generate_body_with_web_search(system_prompt: str, body_prompt: str, keyword
         messages=[{"role": "user", "content": enriched_prompt}],
     )
 
-    return body_resp.content[0].text.strip()
+    result = body_resp.content[0].text.strip()
+    result = re.sub(r'^```\w*\n?', '', result)
+    result = re.sub(r'\n?```$', '', result)
+    return result.strip()
 
 
 def _translate_keyword_for_unsplash(keyword: str) -> str:
