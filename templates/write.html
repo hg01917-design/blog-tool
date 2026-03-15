@@ -175,6 +175,7 @@ body::after {
   border-radius: 12px;
   padding: 28px 24px;
   margin-top: 32px;
+  overflow: hidden;
 }
 .result-label {
   font-size: 9px; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase;
@@ -198,7 +199,9 @@ body::after {
   padding: 8px 10px; border: 1px solid rgba(20,18,16,0.1); text-align: left;
 }
 .result-body table th { background: rgba(20,18,16,0.03); font-weight: 600; }
-.result-body img { max-width: 100%; height: auto; border-radius: 8px; margin: 8px 0; }
+.result-body img { max-width: 100% !important; width: 100% !important; height: auto !important; border-radius: 8px; margin: 8px 0; display: block; }
+#imageSection { max-width: 100% !important; overflow: hidden; }
+#imageSection img { max-width: 100% !important; width: 100% !important; height: auto !important; display: block; }
 
 /* tags */
 .result-tags {
@@ -563,8 +566,8 @@ body::after {
         <button class="edit-toggle" id="editToggle" onclick="toggleEditMode()">편집 모드</button>
       </div>
       <div class="result-title-text" id="resultTitle"></div>
-      <div id="imageSection" style="display:none; margin-bottom:16px; position:relative; width:800px; max-width:100%;">
-        <img id="resultImage" src="" alt="" style="width:800px;height:800px;object-fit:cover;border-radius:10px;">
+      <div id="imageSection" style="display:none; margin-bottom:16px; position:relative; max-width:100%;">
+        <img id="resultImage" src="" alt="" style="width:100%;max-width:800px;height:auto;object-fit:cover;border-radius:10px;">
         <div id="imageOverlay" style="position:absolute;top:0;left:0;width:100%;height:100%;display:flex;align-items:center;justify-content:center;border-radius:10px;">
           <div style="background:rgba(0,0,0,0.5);padding:16px 32px;border-radius:8px;max-width:80%;text-align:center;">
             <span id="overlayText" style="color:#fff;font-size:1.4em;font-weight:bold;line-height:1.4;word-break:keep-all;"></span>
