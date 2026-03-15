@@ -63,6 +63,15 @@ for f in "${FILES[@]}"; do
   fi
 done
 
+# ── 3-1) 네이버 쿠키 파일 전송 (있으면) ──
+COOKIE_FILE="data/naver_cookies.json"
+if [ -f "$COOKIE_FILE" ]; then
+  scp "$COOKIE_FILE" "${REMOTE}:~/${REMOTE_DIR}/data/naver_cookies.json"
+  echo "  OK $COOKIE_FILE"
+else
+  echo "  -- $COOKIE_FILE (없음, 건너뜀)"
+fi
+
 # ── 4) 의존성 설치 + Gunicorn 재시작 ──
 echo ""
 echo -e "${Y}[4/5] 의존성 설치 + Gunicorn 재시작...${N}"
