@@ -1178,18 +1178,12 @@ def generate():
     body = re.sub(r"<!--\s*광고[^>]*-->", "", body)
     body = re.sub(r'<div[^>]*>\s*Advertisement\s*</div>', "", body, flags=re.IGNORECASE)
     body = re.sub(r'<script\s+type=["\']application/ld\+json["\']>.*?</script>', "", body, flags=re.DOTALL | re.IGNORECASE)
-    # 2) Unsplash 이미지 검색 (대표 1장 + 본문 최대 3장 = 총 4장)
-    MAX_BODY_IMAGES = 3
-    all_images = _search_unsplash_images(keyword, MAX_BODY_IMAGES + 1)
-    # 3) 대표 이미지는 첫 번째, h2 이미지는 나머지 사용 (중복 방지, 최대 3장)
+    # 2) Unsplash 이미지 검색 (대표 이미지 1장만 — featured_media 전용)
+    all_images = _search_unsplash_images(keyword, 1)
     thumbnail_url = ""
     if all_images:
         thumbnail_url = all_images[0]["url"].split("?")[0] + "?w=800&h=800&fit=crop&fm=webp&q=80"
-        h2_images = all_images[1:MAX_BODY_IMAGES + 1]
-    else:
-        h2_images = []
-    body = _insert_images_at_h2(body, keyword, h2_images)
-    # 대표 이미지는 WordPress featured_media로만 사용 (본문 삽입 제거로 중복 방지)
+    # 본문에는 이미지를 삽입하지 않음 (WordPress featured_media로만 사용)
     # 4) 제목 주석을 HTML 최상단에 삽입
     body = f"<!-- 제목: {title} -->\n" + body
     # 5) 플랫폼별 AdSense 광고 삽입 (네이버는 애드센스 미지원)
