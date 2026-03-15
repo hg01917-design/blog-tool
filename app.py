@@ -1179,37 +1179,11 @@ def generate():
     body = re.sub(r"<!--\s*광고[^>]*-->", "", body)
     body = re.sub(r'<div[^>]*>\s*Advertisement\s*</div>', "", body, flags=re.IGNORECASE)
     body = re.sub(r'<script\s+type=["\']application/ld\+json["\']>.*?</script>', "", body, flags=re.DOTALL | re.IGNORECASE)
-    # 2) Imagen 3 썸네일 생성 (featured_media 전용, 본문에는 삽입하지 않음)
+    # 2) Unsplash 대표 이미지 (featured_media 전용)
     thumbnail_url = ""
-    imagen_bytes = _generate_imagen_thumbnail(title, keyword)
-    if imagen_bytes:
-        # Imagen 이미지를 WP 미디어에 직접 업로드
-        safe_fn = re.sub(r'[^\w가-힣]', '-', title)[:50]
-        headers = _wp_auth_header()
-        headers["Content-Type"] = "image/webp"
-        headers["Content-Disposition"] = f'attachment; filename="{safe_fn}.webp"'
-        try:
-            up_resp = http_requests.post(
-                f"{WP_URL}/wp-json/wp/v2/media",
-                headers=headers,
-                data=imagen_bytes,
-                timeout=30,
-            )
-            if up_resp.status_code in (200, 201):
-                media = up_resp.json()
-                thumbnail_url = media.get("source_url", "")
-                # media_id를 미리 저장 (발행 시 사용)
-                _imagen_media_id = media.get("id")
-            else:
-                print(f"[Imagen] WP 업로드 실패: {up_resp.status_code}")
-        except Exception as e:
-            print(f"[Imagen] WP 업로드 오류: {e}")
-    # Imagen 실패 시 Unsplash fallback
-    if not thumbnail_url:
-        all_images = _search_unsplash_images(keyword, 1)
-        if all_images:
-            thumbnail_url = all_images[0]["url"].split("?")[0] + "?w=800&h=800&fit=crop&fm=webp&q=80"
-        _imagen_media_id = None
+    all_images = _search_unsplash_images(keyword, 1, title=title)
+    if all_images:
+        thumbnail_url = all_images[0]["url"].split("?")[0] + "?w=800&h=800&fit=crop&fm=webp&q=80"
     # 4) 제목 주석을 HTML 최상단에 삽입
     body = f"<!-- 제목: {title} -->\n" + body
     # 5) 플랫폼별 AdSense 광고 삽입 (네이버는 애드센스 미지원)
@@ -1233,8 +1207,6 @@ def generate():
         "platform": PLATFORM_NAMES[platform],
         "category": category,
     }
-    if _imagen_media_id:
-        result["imagen_media_id"] = _imagen_media_id
     if meta_description:
         result["meta_description"] = meta_description
     if title_candidates:
@@ -1437,27 +1409,35 @@ def _generate_imagen_thumbnail(title: str, keyword: str) -> bytes | None:
         return None
 
 
-def _translate_keyword_for_unsplash(keyword: str) -> str:
-    """한국어 키워드를 Unsplash 검색용 영어로 변환합니다."""
-    if re.search(r"[가-힣]", keyword):
-        try:
-            resp = claude_client.messages.create(
-                model=_get_model(),
-                max_tokens=60,
-                messages=[{"role": "user", "content":
-                    f"Translate this Korean keyword to a short English Unsplash search query (2-4 words, no quotes, no explanation):\n{keyword}"}],
-            )
-            translated = resp.content[0].text.strip().strip('"\'')
-            print(f"[Unsplash] 키워드 번역: {keyword!r} → {translated!r}")
-            return translated
-        except Exception as e:
-            print(f"[Unsplash] 번역 실패: {e}")
+def _translate_keyword_for_unsplash(keyword: str, title: str = "") -> str:
+    """글 제목 + 키워드에서 핵심 의미를 추출하여 Unsplash 검색용 영어 쿼리로 변환."""
+    source = title if title else keyword
+    if not re.search(r"[가-힣]", source):
+        return source
+
+    try:
+        resp = claude_client.messages.create(
+            model=_get_model(),
+            max_tokens=60,
+            messages=[{"role": "user", "content":
+                f"아래 한국어 블로그 제목에서 핵심 주제를 파악하고, "
+                f"Unsplash에서 관련 사진을 찾을 수 있는 영어 검색어 2~4단어로 변환해주세요.\n"
+                f"구체적인 장소나 사물 위주로, 추상적 단어(support, program, guide) 대신 "
+                f"시각적으로 촬영 가능한 대상을 선택하세요.\n"
+                f"따옴표나 설명 없이 검색어만 출력하세요.\n\n"
+                f"제목: {source}\n키워드: {keyword}"}],
+        )
+        translated = resp.content[0].text.strip().strip('"\'')
+        print(f"[Unsplash] 검색어 변환: {source!r} → {translated!r}")
+        return translated
+    except Exception as e:
+        print(f"[Unsplash] 번역 실패: {e}")
     return keyword
 
 
-def _search_unsplash_images(keyword: str, count: int, used_ids=None) -> list:
+def _search_unsplash_images(keyword: str, count: int, used_ids=None, title: str = "") -> list:
     """Unsplash에서 키워드 관련 이미지를 검색하여 URL을 반환합니다.
-    한국어 키워드는 자동으로 영어 번역 후 검색합니다.
+    글 제목 + 키워드를 분석하여 영어 검색어로 변환 후 검색합니다.
     검색 결과가 부족하면 키워드를 단순화하여 재시도합니다."""
     if not UNSPLASH_ACCESS_KEY or UNSPLASH_ACCESS_KEY == "여기에Access키붙여넣기":
         return []
@@ -1466,7 +1446,7 @@ def _search_unsplash_images(keyword: str, count: int, used_ids=None) -> list:
     if used_ids is None:
         used_ids = set()
 
-    query = _translate_keyword_for_unsplash(keyword)
+    query = _translate_keyword_for_unsplash(keyword, title=title)
 
     # 검색어 후보: 원본 → 첫 단어 → 일반 fallback
     queries_to_try = [query]
@@ -1815,7 +1795,6 @@ def publish_wordpress():
     subtype = data.get("subtype", "")
     thumbnail_url = data.get("thumbnail", "")
     focus_keyword = data.get("focus_keyword", "")
-    imagen_media_id = data.get("imagen_media_id")
 
     if not title or not body:
         return jsonify({"error": "제목과 본문이 필요합니다."}), 400
@@ -1826,12 +1805,9 @@ def publish_wordpress():
 
     steps = []
 
-    # 1) 대표 이미지: Imagen media ID 우선, 없으면 URL로 업로드
+    # 1) 대표 이미지 업로드
     featured_media_id = None
-    if imagen_media_id:
-        featured_media_id = imagen_media_id
-        steps.append({"step": "image_upload", "status": "success", "media_id": featured_media_id, "source": "imagen"})
-    elif thumbnail_url:
+    if thumbnail_url:
         safe_title = re.sub(r'[^\w가-힣]', '-', title)[:50]
         featured_media_id = _wp_upload_image(thumbnail_url, f"{safe_title}.webp")
         if featured_media_id:
@@ -1995,7 +1971,6 @@ def publish_and_index():
     subtype = data.get("subtype", "")
     thumbnail_url = data.get("thumbnail", "")
     focus_keyword = data.get("focus_keyword", "")
-    imagen_media_id = data.get("imagen_media_id")
 
     if not title or not body:
         return jsonify({"error": "제목과 본문이 필요합니다."}), 400
@@ -2004,11 +1979,9 @@ def publish_and_index():
     if not focus_keyword and tags_str:
         focus_keyword = tags_str.split(",")[0].strip()
 
-    # 이미지: Imagen media ID 우선, 없으면 URL로 업로드
+    # 이미지 업로드
     featured_media_id = None
-    if imagen_media_id:
-        featured_media_id = imagen_media_id
-    elif thumbnail_url:
+    if thumbnail_url:
         safe_title = re.sub(r'[^\w가-힣]', '-', title)[:50]
         featured_media_id = _wp_upload_image(thumbnail_url, f"{safe_title}.webp")
 
