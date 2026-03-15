@@ -953,7 +953,8 @@ async function publishAndIndex() {
         tags: currentData.tags || '',
         category, subtype,
         thumbnail: currentData.thumbnail || '',
-        focus_keyword: document.getElementById('keyword').value.trim()
+        focus_keyword: document.getElementById('keyword').value.trim(),
+        imagen_media_id: currentData.imagen_media_id || null
       })
     });
     const result = await res.json();

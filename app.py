@@ -216,6 +216,7 @@ def add_no_cache_headers(response):
 
 claude_client = anthropic.Anthropic()
 UNSPLASH_ACCESS_KEY = os.environ.get("UNSPLASH_ACCESS_KEY", "")
+GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "")
 
 # WordPress REST API 설정
 WP_URL = os.environ.get("WP_URL", "").rstrip("/")
@@ -1178,12 +1179,37 @@ def generate():
     body = re.sub(r"<!--\s*광고[^>]*-->", "", body)
     body = re.sub(r'<div[^>]*>\s*Advertisement\s*</div>', "", body, flags=re.IGNORECASE)
     body = re.sub(r'<script\s+type=["\']application/ld\+json["\']>.*?</script>', "", body, flags=re.DOTALL | re.IGNORECASE)
-    # 2) Unsplash 이미지 검색 (대표 이미지 1장만 — featured_media 전용)
-    all_images = _search_unsplash_images(keyword, 1)
+    # 2) Imagen 3 썸네일 생성 (featured_media 전용, 본문에는 삽입하지 않음)
     thumbnail_url = ""
-    if all_images:
-        thumbnail_url = all_images[0]["url"].split("?")[0] + "?w=800&h=800&fit=crop&fm=webp&q=80"
-    # 본문에는 이미지를 삽입하지 않음 (WordPress featured_media로만 사용)
+    imagen_bytes = _generate_imagen_thumbnail(title, keyword)
+    if imagen_bytes:
+        # Imagen 이미지를 WP 미디어에 직접 업로드
+        safe_fn = re.sub(r'[^\w가-힣]', '-', title)[:50]
+        headers = _wp_auth_header()
+        headers["Content-Type"] = "image/webp"
+        headers["Content-Disposition"] = f'attachment; filename="{safe_fn}.webp"'
+        try:
+            up_resp = http_requests.post(
+                f"{WP_URL}/wp-json/wp/v2/media",
+                headers=headers,
+                data=imagen_bytes,
+                timeout=30,
+            )
+            if up_resp.status_code in (200, 201):
+                media = up_resp.json()
+                thumbnail_url = media.get("source_url", "")
+                # media_id를 미리 저장 (발행 시 사용)
+                _imagen_media_id = media.get("id")
+            else:
+                print(f"[Imagen] WP 업로드 실패: {up_resp.status_code}")
+        except Exception as e:
+            print(f"[Imagen] WP 업로드 오류: {e}")
+    # Imagen 실패 시 Unsplash fallback
+    if not thumbnail_url:
+        all_images = _search_unsplash_images(keyword, 1)
+        if all_images:
+            thumbnail_url = all_images[0]["url"].split("?")[0] + "?w=800&h=800&fit=crop&fm=webp&q=80"
+        _imagen_media_id = None
     # 4) 제목 주석을 HTML 최상단에 삽입
     body = f"<!-- 제목: {title} -->\n" + body
     # 5) 플랫폼별 AdSense 광고 삽입 (네이버는 애드센스 미지원)
@@ -1207,6 +1233,8 @@ def generate():
         "platform": PLATFORM_NAMES[platform],
         "category": category,
     }
+    if _imagen_media_id:
+        result["imagen_media_id"] = _imagen_media_id
     if meta_description:
         result["meta_description"] = meta_description
     if title_candidates:
@@ -1302,6 +1330,111 @@ def _generate_body_with_web_search(system_prompt: str, body_prompt: str, keyword
     result = re.sub(r'^```\w*\n?', '', result)
     result = re.sub(r'\n?```$', '', result)
     return result.strip()
+
+
+def _generate_imagen_thumbnail(title: str, keyword: str) -> bytes | None:
+    """Google Imagen 3로 썸네일 생성 → 800x800 크롭 + 제목 오버레이 → WebP bytes 반환."""
+    if not GOOGLE_API_KEY:
+        print("[Imagen] GOOGLE_API_KEY 미설정")
+        return None
+
+    try:
+        from google import genai
+        from PIL import Image, ImageDraw, ImageFont
+        import io
+        import textwrap
+
+        # 1) 제목을 영어로 번역
+        en_resp = claude_client.messages.create(
+            model=_get_model(),
+            max_tokens=80,
+            messages=[{"role": "user", "content":
+                f"Translate this Korean title to concise English (one line, no quotes):\n{title}"}],
+        )
+        en_title = en_resp.content[0].text.strip().strip('"\'')
+        print(f"[Imagen] 제목 번역: {title!r} → {en_title!r}")
+
+        # 2) Imagen 3로 이미지 생성
+        client = genai.Client(api_key=GOOGLE_API_KEY)
+        prompt = (
+            f"A clean, professional blog thumbnail about {en_title}, "
+            "bright colors, no text, photorealistic"
+        )
+        response = client.models.generate_images(
+            model="imagen-3.0-generate-002",
+            prompt=prompt,
+            config=genai.types.GenerateImagesConfig(
+                number_of_images=1,
+                aspect_ratio="1:1",
+            ),
+        )
+
+        if not response.generated_images:
+            print("[Imagen] 이미지 생성 실패: 결과 없음")
+            return None
+
+        img_bytes = response.generated_images[0].image.image_bytes
+        img = Image.open(io.BytesIO(img_bytes))
+
+        # 3) 800x800 크롭
+        img = img.resize((800, 800), Image.LANCZOS)
+
+        # 4) 제목 텍스트 오버레이 (중앙 상단)
+        draw = ImageDraw.Draw(img)
+        font_path = os.path.join(_APP_DIR, "fonts", "NanumGothicBold.ttf")
+        try:
+            font = ImageFont.truetype(font_path, 38)
+        except OSError:
+            font = ImageFont.load_default()
+            print(f"[Imagen] 폰트 로드 실패: {font_path}, 기본 폰트 사용")
+
+        # 텍스트 줄바꿈 (최대 16자씩)
+        lines = textwrap.wrap(title, width=16)
+        if len(lines) > 3:
+            lines = lines[:3]
+            lines[-1] = lines[-1][:14] + "…"
+
+        # 배경 박스 크기 계산
+        line_bboxes = [draw.textbbox((0, 0), line, font=font) for line in lines]
+        line_heights = [bb[3] - bb[1] for bb in line_bboxes]
+        line_widths = [bb[2] - bb[0] for bb in line_bboxes]
+        total_h = sum(line_heights) + (len(lines) - 1) * 8
+        max_w = max(line_widths) if line_widths else 0
+
+        pad_x, pad_y = 32, 20
+        box_x = (800 - max_w) // 2 - pad_x
+        box_y = 40
+        box_w = max_w + pad_x * 2
+        box_h = total_h + pad_y * 2
+
+        # 반투명 검정 배경
+        overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        overlay_draw = ImageDraw.Draw(overlay)
+        overlay_draw.rounded_rectangle(
+            [box_x, box_y, box_x + box_w, box_y + box_h],
+            radius=12, fill=(0, 0, 0, 140),
+        )
+        img = Image.alpha_composite(img.convert("RGBA"), overlay)
+        draw = ImageDraw.Draw(img)
+
+        # 텍스트 렌더링
+        y_cursor = box_y + pad_y
+        for i, line in enumerate(lines):
+            lw = line_widths[i]
+            x = (800 - lw) // 2
+            draw.text((x, y_cursor), line, fill="white", font=font)
+            y_cursor += line_heights[i] + 8
+
+        # 5) WebP 변환
+        out_buf = io.BytesIO()
+        img.convert("RGB").save(out_buf, format="WEBP", quality=85)
+        print(f"[Imagen] 썸네일 생성 완료: {len(out_buf.getvalue())} bytes")
+        return out_buf.getvalue()
+
+    except Exception as e:
+        print(f"[Imagen] 썸네일 생성 실패: {e}")
+        import traceback; traceback.print_exc()
+        return None
 
 
 def _translate_keyword_for_unsplash(keyword: str) -> str:
@@ -1682,6 +1815,7 @@ def publish_wordpress():
     subtype = data.get("subtype", "")
     thumbnail_url = data.get("thumbnail", "")
     focus_keyword = data.get("focus_keyword", "")
+    imagen_media_id = data.get("imagen_media_id")
 
     if not title or not body:
         return jsonify({"error": "제목과 본문이 필요합니다."}), 400
@@ -1692,9 +1826,12 @@ def publish_wordpress():
 
     steps = []
 
-    # 1) 대표 이미지 업로드
+    # 1) 대표 이미지: Imagen media ID 우선, 없으면 URL로 업로드
     featured_media_id = None
-    if thumbnail_url:
+    if imagen_media_id:
+        featured_media_id = imagen_media_id
+        steps.append({"step": "image_upload", "status": "success", "media_id": featured_media_id, "source": "imagen"})
+    elif thumbnail_url:
         safe_title = re.sub(r'[^\w가-힣]', '-', title)[:50]
         featured_media_id = _wp_upload_image(thumbnail_url, f"{safe_title}.webp")
         if featured_media_id:
@@ -1858,6 +1995,7 @@ def publish_and_index():
     subtype = data.get("subtype", "")
     thumbnail_url = data.get("thumbnail", "")
     focus_keyword = data.get("focus_keyword", "")
+    imagen_media_id = data.get("imagen_media_id")
 
     if not title or not body:
         return jsonify({"error": "제목과 본문이 필요합니다."}), 400
@@ -1866,9 +2004,11 @@ def publish_and_index():
     if not focus_keyword and tags_str:
         focus_keyword = tags_str.split(",")[0].strip()
 
-    # 이미지 업로드
+    # 이미지: Imagen media ID 우선, 없으면 URL로 업로드
     featured_media_id = None
-    if thumbnail_url:
+    if imagen_media_id:
+        featured_media_id = imagen_media_id
+    elif thumbnail_url:
         safe_title = re.sub(r'[^\w가-힣]', '-', title)[:50]
         featured_media_id = _wp_upload_image(thumbnail_url, f"{safe_title}.webp")
 
