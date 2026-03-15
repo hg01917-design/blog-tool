@@ -223,6 +223,9 @@ WP_URL = os.environ.get("WP_URL", "").rstrip("/")
 WP_USER = os.environ.get("WP_USER", "")
 WP_APP_PASSWORD = os.environ.get("WP_APP_PASSWORD", "")
 
+# 네이버 블로그 설정
+NAVER_BLOG_ID = os.environ.get("NAVER_BLOG_ID", "")
+
 # IndexNow 설정
 INDEXNOW_KEY = os.environ.get("INDEXNOW_KEY", "")
 if not INDEXNOW_KEY:
@@ -1866,6 +1869,80 @@ def publish_wordpress():
     except Exception as e:
         steps.append({"step": "publish", "status": "failed", "error": str(e)})
         return jsonify({"error": f"발행 실패: {str(e)}", "steps": steps}), 500
+
+
+# ──────────────────────────────────────────────
+# 네이버 블로그 자동 발행 (Playwright)
+# ──────────────────────────────────────────────
+
+@app.route("/publish-naver", methods=["POST"])
+def publish_naver():
+    """네이버 블로그 Playwright 자동 발행."""
+    if not NAVER_BLOG_ID:
+        return jsonify({"error": "NAVER_BLOG_ID가 설정되지 않았습니다. .env에 추가해주세요."}), 400
+
+    import naver_playwright
+
+    if not naver_playwright.cookies_exist():
+        return jsonify({"error": "네이버 쿠키가 없습니다. /naver-login으로 먼저 로그인해주세요."}), 400
+
+    data = request.get_json()
+    title = data.get("title", "")
+    body = data.get("body", "")
+    tags_str = data.get("tags", "")
+
+    if not title or not body:
+        return jsonify({"error": "제목과 본문이 필요합니다."}), 400
+
+    tag_list = [t.strip() for t in tags_str.split(",") if t.strip()][:10]
+
+    result = naver_playwright.publish_to_naver(title, body, tag_list)
+
+    if result.get("success"):
+        return jsonify(result)
+    else:
+        return jsonify(result), 500
+
+
+@app.route("/naver-login", methods=["GET", "POST"])
+def naver_login_page():
+    """네이버 로그인 (쿠키 저장).
+
+    GET: 수동 로그인용 브라우저 실행 (headless=False, 로컬 전용)
+    POST: 쿠키 JSON 직접 업로드 (headless 서버용)
+    """
+    import naver_playwright
+
+    if request.method == "POST":
+        # 쿠키 JSON 업로드 방식
+        data = request.get_json()
+        cookies_json = data.get("cookies", "")
+        if not cookies_json:
+            return jsonify({"error": "cookies 필드가 필요합니다."}), 400
+
+        if isinstance(cookies_json, list):
+            cookies_json = json.dumps(cookies_json)
+
+        result = naver_playwright.upload_cookies(cookies_json)
+        if result["success"]:
+            return jsonify({"success": True, "message": f"쿠키 {result['cookie_count']}개 저장 완료"})
+        else:
+            return jsonify({"error": result["error"]}), 400
+
+    # GET: 브라우저 실행 (로컬 전용)
+    result = naver_playwright.login_and_save_cookies()
+    if result["success"]:
+        return jsonify({"success": True, "message": f"로그인 성공, 쿠키 {result['cookie_count']}개 저장"})
+    else:
+        return jsonify({"error": result["error"]}), 400
+
+
+@app.route("/naver-cookie-status")
+def naver_cookie_status():
+    """네이버 쿠키 상태 확인."""
+    import naver_playwright
+    exists = naver_playwright.cookies_exist()
+    return jsonify({"exists": exists, "blog_id": NAVER_BLOG_ID or "(미설정)"})
 
 
 # ──────────────────────────────────────────────

@@ -18,6 +18,7 @@ FILES=(
   app.py
   keywords.py
   orders.py
+  naver_playwright.py
   requirements.txt
   adsense.html
   templates/index.html
@@ -67,6 +68,7 @@ echo ""
 echo -e "${Y}[4/5] 의존성 설치 + Gunicorn 재시작...${N}"
 ssh $REMOTE "cd ~/${REMOTE_DIR} && \
   pip3 install -r requirements.txt -q 2>&1 | tail -3 && \
+  python3 -m playwright install chromium 2>&1 | tail -2 && \
   kill \$(cat gunicorn.pid 2>/dev/null) 2>/dev/null || true && \
   sleep 1 && \
   ~/.local/bin/gunicorn \

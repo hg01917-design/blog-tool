@@ -911,9 +911,20 @@ async function generate() {
       imgSection.style.display = 'none';
     }
 
-    // Show publish section for wordpress
+    // Show publish section for wordpress and naver
     document.getElementById('publishSection').style.display =
-      (PLATFORM === 'wordpress') ? 'block' : 'none';
+      (PLATFORM === 'wordpress' || PLATFORM === 'naver') ? 'block' : 'none';
+
+    // Naver: 발행 버튼 텍스트/이벤트 + 파이프라인 UI 변경
+    if (PLATFORM === 'naver') {
+      const pubBtn = document.getElementById('publishBtn');
+      pubBtn.textContent = '네이버 블로그 발행';
+      pubBtn.setAttribute('onclick', 'publishNaver()');
+      // 파이프라인 스텝을 1개로 변경
+      document.getElementById('pipelineStatus').innerHTML = `
+        <div class="p-step"><span class="p-icon pending" id="pIcon1">1</span> 네이버 블로그 발행 <span class="p-detail" id="pDetail1">대기</span></div>
+      `;
+    }
 
     document.getElementById('resultSection').classList.add('visible');
     document.getElementById('resultSection').scrollIntoView({ behavior: 'smooth' });
@@ -999,6 +1010,57 @@ async function publishAndIndex() {
   } finally {
     btn.disabled = false;
     btn.textContent = 'WordPress 발행 & 색인 등록';
+  }
+}
+
+// ═══ Naver Publish ═══
+async function publishNaver() {
+  if (!currentData.title || !currentData.body) return;
+
+  const btn = document.getElementById('publishBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>발행 중...';
+
+  const ps = document.getElementById('pipelineStatus');
+  ps.classList.add('visible');
+  document.getElementById('postUrlBox').style.display = 'none';
+  updateStep(1, 'running', '발행 중...');
+
+  try {
+    const res = await fetch('/publish-naver', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: currentData.title,
+        body: currentData.body,
+        tags: currentData.tags || ''
+      })
+    });
+    const result = await res.json();
+
+    if (!res.ok || !result.success) {
+      updateStep(1, 'failed', result.error || '실패');
+      showToast(result.error || '발행에 실패했습니다');
+      return;
+    }
+
+    updateStep(1, 'success', '완료');
+
+    if (result.post_url) {
+      const box = document.getElementById('postUrlBox');
+      const link = document.getElementById('postUrlLink');
+      link.href = result.post_url;
+      link.textContent = result.post_url;
+      box.style.display = 'block';
+    }
+    showToast('네이버 블로그 발행 완료!');
+
+  } catch (err) {
+    updateStep(1, 'failed', '네트워크 오류');
+    showToast('네트워크 오류가 발생했습니다');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '네이버 블로그 발행';
   }
 }
 
