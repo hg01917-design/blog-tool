@@ -2137,33 +2137,6 @@ def publish_and_index():
     return jsonify(pipeline_results)
 
 
-# ──────────────────────────────────────────────
-# 네이버 블로그 자동 발행 (Playwright)
-# ──────────────────────────────────────────────
-
-@app.route("/publish-naver", methods=["POST"])
-def publish_naver():
-    """네이버 블로그 Playwright 자동 발행 (이미지 생성 + 임시저장)."""
-    import naver_playwright
-
-    data = request.get_json()
-    title = data.get("title", "")
-    body = data.get("body", "")
-    tags_str = data.get("tags", "")
-
-    if not title or not body:
-        return jsonify({"error": "제목과 본문이 필요합니다."}), 400
-
-    tag_list = [t.strip() for t in tags_str.split(",") if t.strip()]
-
-    result = naver_playwright.publish_to_naver(title, body, tag_list)
-
-    if result.get("success"):
-        return jsonify(result)
-    else:
-        return jsonify(result), 500
-
-
 if __name__ == "__main__":
     os.chdir(_APP_DIR)
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5001)))
