@@ -2630,6 +2630,7 @@ def api_queue_add():
         "keyword": keyword,
         "category": data.get("category", "it"),
         "platform": data.get("platform", "naver"),
+        "account_id": data.get("account_id", ""),
         "tone": data.get("tone", "informative"),
         "status": "pending",
         "added_at": datetime.now().isoformat(),
@@ -2656,6 +2657,8 @@ def api_queue_bulk_add():
     if not keywords:
         return jsonify({"error": "키워드를 입력해주세요."}), 400
 
+    account_id = data.get("account_id", "")
+
     queue = _load_json(_QUEUE_PATH, [])
     added = []
     for kw in keywords:
@@ -2664,6 +2667,7 @@ def api_queue_bulk_add():
             "keyword": kw,
             "category": category,
             "platform": platform,
+            "account_id": account_id,
             "tone": tone,
             "status": "pending",
             "added_at": datetime.now().isoformat(),
@@ -2837,23 +2841,31 @@ def api_accounts_publish(entry_id):
     if not target:
         return jsonify({"error": "계정을 찾을 수 없습니다."}), 404
 
-    # 큐에서 해당 플랫폼의 첫 번째 pending 키워드 찾기
+    # 큐에서 키워드 찾기 (우선순위: account_id 매칭 → 플랫폼 매칭)
     queue = _load_json(_QUEUE_PATH, [])
     keyword_entry = None
+
+    # 1) 이 계정에 할당된 pending 키워드
     for q in queue:
-        if q.get("status") == "pending" and q.get("platform") == target_platform:
+        if q.get("status") == "pending" and q.get("account_id") == entry_id:
             keyword_entry = q
             break
 
+    # 2) account_id 미지정 + 같은 플랫폼 pending 키워드
     if not keyword_entry:
-        # 플랫폼 무관하게 아무 pending이라도
         for q in queue:
-            if q.get("status") == "pending":
+            if (q.get("status") == "pending"
+                    and q.get("platform") == target_platform
+                    and not q.get("account_id")):
                 keyword_entry = q
                 break
 
     if not keyword_entry:
         return jsonify({"error": "대기 중인 키워드가 없습니다. 키워드 큐에 먼저 추가하세요."}), 400
+
+    # 발행 시작 시 account_id 기록
+    keyword_entry["account_id"] = entry_id
+    _save_json(_QUEUE_PATH, queue)
 
     # 백그라운드 스레드로 발행 실행 (Gunicorn timeout 방지)
     def _run_publish(kw_id):

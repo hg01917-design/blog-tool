@@ -253,6 +253,9 @@ h1 { font-family: 'Bebas Neue', cursive; font-size: 36px; letter-spacing: 0.06em
         <option value="tistory-it">티스토리 (IT)</option>
         <option value="wordpress-government">워드프레스 (정부지원금)</option>
       </select>
+      <select class="form-select" id="accountSelect">
+        <option value="">계정 미지정 (자동)</option>
+      </select>
       <input type="hidden" id="catSelect" value="living">
       <input type="hidden" id="platformSelect" value="naver">
       <input type="hidden" id="toneSelect" value="informative">
@@ -356,13 +359,35 @@ const PRESETS = {
   'tistory-it':          { platform: 'tistory',   category: 'it',         tone: 'informative' },
   'wordpress-government':{ platform: 'wordpress',  category: 'government', tone: 'informative' },
 };
+var _allAccounts = {};
+
+async function loadAccounts() {
+  try {
+    var resp = await fetch('/api/dashboard/status');
+    var data = await resp.json();
+    _allAccounts = data.accounts || {};
+    applyPreset();
+  } catch(e) {}
+}
+
 function applyPreset() {
-  const p = PRESETS[$('presetSelect').value];
+  var p = PRESETS[$('presetSelect').value];
   if (!p) return;
   $('catSelect').value = p.category;
   $('platformSelect').value = p.platform;
   $('toneSelect').value = p.tone;
+
+  // 해당 플랫폼 계정으로 드롭다운 갱신
+  var sel = $('accountSelect');
+  sel.innerHTML = '<option value="">계정 미지정 (자동)</option>';
+  var accts = _allAccounts[p.platform] || [];
+  accts.forEach(function(a) {
+    sel.innerHTML += '<option value="' + a.id + '">' + (a.name || a.id) + '</option>';
+  });
+  if (accts.length === 1) sel.value = accts[0].id;
 }
+
+loadAccounts();
 
 // ── Add Single Keyword ──
 async function addKeyword() {
@@ -378,6 +403,7 @@ async function addKeyword() {
         keyword,
         category: $('catSelect').value,
         platform: $('platformSelect').value,
+        account_id: $('accountSelect').value,
         tone: $('toneSelect').value
       })
     });
@@ -414,6 +440,7 @@ async function bulkAdd() {
         keywords,
         category: $('catSelect').value,
         platform: $('platformSelect').value,
+        account_id: $('accountSelect').value,
         tone: $('toneSelect').value
       })
     });
