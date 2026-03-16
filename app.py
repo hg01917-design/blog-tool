@@ -2823,7 +2823,14 @@ def api_accounts_publish(entry_id):
             import scheduler as sched_mod
             sched_mod.run_single(kw_id)
         except Exception as e:
-            print(f"[Publish] 백그라운드 발행 실패: {e}")
+            import traceback, datetime
+            err_msg = f"[{datetime.datetime.now()}] [Publish] 백그라운드 발행 실패 (kw_id={kw_id}): {e}\n{traceback.format_exc()}\n"
+            print(err_msg)
+            try:
+                with open(os.path.join(_APP_DIR, "error.log"), "a", encoding="utf-8") as f:
+                    f.write(err_msg)
+            except Exception:
+                pass
 
     t = threading.Thread(target=_run_publish, args=(keyword_entry["id"],), daemon=True)
     t.start()
