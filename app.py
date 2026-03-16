@@ -5,6 +5,7 @@ import base64
 import secrets
 import json
 import random
+import threading
 from datetime import datetime
 from typing import Optional
 import requests as http_requests
@@ -2816,13 +2817,17 @@ def api_accounts_publish(entry_id):
     if not keyword_entry:
         return jsonify({"error": "대기 중인 키워드가 없습니다. 키워드 큐에 먼저 추가하세요."}), 400
 
-    # 스케줄러의 run_single 호출
-    try:
-        import scheduler as sched_mod
-        result = sched_mod.run_single(keyword_entry["id"])
-        return jsonify(result)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    # 백그라운드 스레드로 발행 실행 (Gunicorn timeout 방지)
+    def _run_publish(kw_id):
+        try:
+            import scheduler as sched_mod
+            sched_mod.run_single(kw_id)
+        except Exception as e:
+            print(f"[Publish] 백그라운드 발행 실패: {e}")
+
+    t = threading.Thread(target=_run_publish, args=(keyword_entry["id"],), daemon=True)
+    t.start()
+    return jsonify({"success": True, "message": "발행이 시작되었습니다. 잠시 후 결과를 확인하세요."})
 
 
 # ──────────────────────────────────────────────
