@@ -10,7 +10,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
 # ── SSH 설정 (~/.ssh/config의 cloudways 호스트 사용) ──
-REMOTE="cloudways"
+REMOTE="blog-server"
 REMOTE_DIR="blog-tool"
 
 # ── 배포 대상 파일 ──
