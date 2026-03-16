@@ -2407,13 +2407,11 @@ _LOG_PATH = os.path.join(_DATA_DIR, "publish_log.json")
 
 def _load_json(path, default=None):
     """JSON 파일 로드 (없으면 기본값 반환)."""
-    if default is None:
-        default = []
     try:
         with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
-        return default
+        return default if default is not None else []
 
 
 def _save_json(path, data):
@@ -2429,7 +2427,7 @@ _ACCOUNTS_PATH = os.path.join(_DATA_DIR, "accounts.json")
 def _load_accounts():
     """계정 목록 로드. 없으면 .env 기반 기본값 생성."""
     accounts = _load_json(_ACCOUNTS_PATH, None)
-    if accounts is None:
+    if not isinstance(accounts, dict):
         # 초기 accounts.json 생성 (.env 기반)
         accounts = {"naver": [], "tistory": [], "wordpress": []}
         if NAVER_BLOG_ID:
