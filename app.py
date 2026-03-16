@@ -1243,96 +1243,46 @@ def generate():
     if not title:
         title = meta_content.strip().split("\n")[0].strip()
 
-    # ── 2단계: 블로그 본문 생성 (Sonnet – 고품질) ──
+    # ── 2단계: 블로그 본문 생성 ──
     # 정부지원금/공략 등 최신 정보가 필요한 경우 웹 검색
     use_web_search = (category == "government" or subtype == "walkthrough")
 
-    body_prompt = (
-        f"다음 제목과 키워드로 {PLATFORM_NAMES[platform]} 블로그 본문만 작성해주세요.\n\n"
-        f"제목: {title}\n"
-        f"키워드: {keyword}\n"
-        f"글 톤: {tone_desc}\n\n"
-    )
+    # 플랫폼별 body_prompt 분리
+    if platform == "naver":
+        body_prompt = (
+            f"키워드: {keyword}\n"
+            f"제목: {title}\n\n"
+            "위의 시스템 프롬프트에 정의된 말투, 도입부 패턴, 글 구조를 그대로 따라서 본문만 작성해줘.\n"
+            "제목, 태그 포함하지 마. HTML 태그 사용 금지. ##H2:소제목## 형식 사용."
+        )
+    elif platform == "tistory":
+        body_prompt = (
+            f"키워드: {keyword}\n"
+            f"제목: {title}\n\n"
+            "위의 시스템 프롬프트에 정의된 말투, 도입부 패턴, 글 구조를 그대로 따라서 본문만 작성해줘.\n"
+            "제목, 태그 포함하지 마. HTML 태그 사용 금지. ##H2:소제목## 형식 사용."
+        )
+    elif platform == "wordpress":
+        body_prompt = (
+            f"키워드: {keyword}\n"
+            f"제목: {title}\n\n"
+            "위의 시스템 프롬프트에 정의된 구조와 형식으로 본문만 작성해줘.\n"
+            "HTML 형식으로 작성. 제목, 태그 포함하지 마."
+        )
+    else:
+        body_prompt = (
+            f"키워드: {keyword}\n"
+            f"제목: {title}\n\n"
+            "위의 시스템 프롬프트에 따라 본문만 작성해줘."
+        )
 
     # 경쟁글 팩트가 있으면 프롬프트에 주입
     if competitor_facts:
         body_prompt += (
-            "[경쟁 블로그 분석 팩트 — 아래 정보를 본문에 자연스럽게 반영하세요]\n"
+            f"\n\n[경쟁 블로그 분석 팩트 — 아래 정보를 본문에 자연스럽게 반영하세요]\n"
             f"{competitor_facts}\n\n"
-            "위 팩트를 참고하되 그대로 복사하지 말고, 더 정확하고 풍부한 내용으로 재구성하세요.\n\n"
+            "위 팩트를 참고하되 그대로 복사하지 말고, 더 정확하고 풍부한 내용으로 재구성하세요."
         )
-    # 티스토리: 메타설명 함께 요청
-    meta_desc_instruction = ""
-    if platform == "tistory":
-        meta_desc_instruction = (
-            "\n\n응답 형식:\n"
-            "HTML 본문을 먼저 출력하고, 마지막에 아래 형식으로 메타설명을 추가하세요.\n"
-            "---메타설명---\n"
-            "150~160자의 검색 결과 미리보기용 메타 설명"
-        )
-
-    if use_web_search:
-        if category == "government":
-            body_prompt += (
-                "요구사항:\n"
-                "1. 웹 검색으로 복지로, 정부24 등 공식 사이트에서 이 정책의 최신 정보를 확인하세요\n"
-                "2. 지원 대상, 금액, 신청 기간, 신청 방법, 필요 서류를 반드시 포함하세요\n"
-                "3. 확인되지 않은 정보는 '공식 사이트에서 확인 필요'로 표기하세요\n"
-                "4. 본문은 HTML 형식으로 작성하세요\n"
-                "5. 이미지는 자동 삽입되므로 [이미지] 같은 플레이스홀더를 넣지 마세요\n"
-                "6. HTML table 태그로 지원 조건/금액 비교표를 포함하세요\n"
-                "7. 광고 플레이스홀더 절대 금지, 광고는 자동 삽입됩니다\n"
-                "8. 면책 문구는 자동 삽입되므로 본문에 넣지 마세요\n"
-            )
-            if platform == "naver":
-                body_prompt += "중요: 위의 시스템 프롬프트에 정의된 말투, 도입부 패턴, 글 구조를 반드시 따르세요.\n"
-            if not meta_desc_instruction:
-                body_prompt += "\n응답: HTML 본문만 출력하세요. 제목이나 태그는 포함하지 마세요."
-            else:
-                body_prompt += meta_desc_instruction
-        else:
-            body_prompt += (
-                "요구사항:\n"
-                "1. 먼저 웹 검색을 사용하여 이 키워드에 대한 최신 공략/가이드 정보를 검색하세요\n"
-                "2. 검색 결과를 바탕으로 정확하고 최신의 공략 정보를 포함한 본문을 작성하세요\n"
-                "3. 본문은 HTML 형식으로 작성하세요\n"
-                "4. 이미지는 자동 삽입되므로 [이미지] 같은 플레이스홀더를 넣지 마세요\n"
-                "5. HTML table 태그 사용 시 모든 셀에 반드시 구체적인 내용을 채우세요\n"
-                "6. 광고 플레이스홀더 절대 금지, 광고는 자동 삽입됩니다\n"
-                "7. 검색 결과의 출처를 적절히 참고하되, 글은 독창적으로 재구성하세요\n"
-            )
-            if not meta_desc_instruction:
-                body_prompt += "\n응답: HTML 본문만 출력하세요. 제목이나 태그는 포함하지 마세요."
-            else:
-                body_prompt += meta_desc_instruction
-    else:
-        body_prompt += (
-            "요구사항:\n"
-            "1. 본문은 HTML 형식으로 작성하세요\n"
-            "2. 이미지는 자동 삽입되므로 [이미지] 같은 플레이스홀더를 넣지 마세요\n"
-            "3. HTML table 태그 사용 시 모든 셀에 반드시 구체적인 내용을 채우세요\n"
-            "4. 광고 플레이스홀더(<!-- 광고위치 -->, [광고], Advertisement div) 절대 금지\n"
-            "5. 광고는 자동 삽입되므로 본문에 광고 관련 코드를 넣지 마세요\n"
-        )
-        if not meta_desc_instruction:
-            body_prompt += "\n응답: HTML 본문만 출력하세요. 제목이나 태그는 포함하지 마세요."
-        else:
-            body_prompt += meta_desc_instruction
-
-    # ── 구글 SEO 필수 규칙 (프롬프트 끝 추가) ──
-    body_prompt += (
-        "\n\n[구글 SEO 필수 규칙]\n"
-        "1. 도입부 필수: 본문은 반드시 도입부(3~5문장)로 시작할 것. "
-        "독자의 관심을 끄는 질문이나 공감 문장으로 시작하고, "
-        f"포커스 키워드(\"{keyword}\")를 도입부 안에 자연스럽게 포함시킬 것. "
-        "도입부를 생략하고 바로 정보나 표로 시작하지 말 것.\n"
-        "2. H태그 구조 준수: H2는 주요 섹션 제목, H3는 세부 항목(신청자격, 소득기준, 지원금액 등)\n"
-        "3. 표(Table) 사용 시: 표 바로 위에 캡션 문장 추가(예: \"2026년 청년지원금 주요 항목 비교표\"), 글 상단에 요약표 배치\n"
-        "4. 이미지 삽입 시 alt 태그에 포커스 키워드 포함\n"
-        f"5. 본문 내 포커스 키워드(\"{keyword}\")를 자연스럽게 3회 이상 포함\n"
-        "6. 글 하단에 내부 링크 유도 문구 1개 추가(예: \"관련 정보가 궁금하다면 아래 글도 확인해보세요\")\n"
-        "7. 소득기준 등 핵심 수치는 <blockquote> 인용구 블록으로 강조\n"
-    )
 
     try:
         if use_web_search:
