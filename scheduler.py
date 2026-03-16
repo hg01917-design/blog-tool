@@ -145,7 +145,7 @@ def _get_next_pending(keyword_id: Optional[str] = None) -> Optional[dict]:
     queue = _read_json(_QUEUE_FILE, [])
     for item in queue:
         if keyword_id and item.get("id") == keyword_id:
-            if item.get("status") == "pending":
+            if item.get("status") in ("pending", "processing"):
                 return item
             return None
         if not keyword_id and item.get("status") == "pending":
