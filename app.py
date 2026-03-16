@@ -2907,6 +2907,56 @@ def api_accounts_publish(entry_id):
     return jsonify({"success": True, "message": "발행이 시작되었습니다. 잠시 후 결과를 확인하세요."})
 
 
+@app.route("/api/accounts/<entry_id>/status")
+def api_accounts_status(entry_id):
+    """계정의 현재 발행 상태를 반환합니다."""
+    accounts = _load_accounts()
+    target_platform = None
+    for platform, accts in accounts.items():
+        for a in accts:
+            if a["id"] == entry_id:
+                target_platform = platform
+                break
+
+    if not target_platform:
+        return jsonify({"error": "계정을 찾을 수 없습니다."}), 404
+
+    queue = _load_json(_QUEUE_PATH, [])
+
+    # processing 중인 키워드 먼저 찾기
+    for q in queue:
+        if q.get("status") == "processing" and q.get("platform") == target_platform:
+            return jsonify({
+                "status": "processing",
+                "keyword": q.get("keyword", ""),
+                "keyword_id": q.get("id", ""),
+            })
+
+    # 가장 최근 완료/실패 키워드 (해당 플랫폼)
+    latest = None
+    for q in reversed(queue):
+        if q.get("platform") == target_platform and q.get("status") in ("published", "failed"):
+            latest = q
+            break
+
+    if latest:
+        return jsonify({
+            "status": latest["status"],
+            "keyword": latest.get("keyword", ""),
+            "keyword_id": latest.get("id", ""),
+            "error_message": latest.get("error", ""),
+            "post_url": latest.get("post_url", ""),
+            "published_at": latest.get("published_at", ""),
+        })
+
+    # pending만 있거나 큐 비어있음
+    pending_count = sum(1 for q in queue if q.get("status") == "pending" and q.get("platform") == target_platform)
+    return jsonify({
+        "status": "idle",
+        "pending_count": pending_count,
+    })
+
+
 # ──────────────────────────────────────────────
 # 스케줄러 초기화
 # ──────────────────────────────────────────────

@@ -296,6 +296,10 @@ body::after {
 .acct-btn:hover { opacity: 0.85; transform: translateY(-1px); }
 .acct-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
 .acct-btn.publish { background: #141210; color: #fff; }
+.pub-status { display: block; font-size: 12px; margin-top: 4px; min-height: 16px; }
+.pub-status.processing { color: #e67e22; }
+.pub-status.published { color: #27ae60; }
+.pub-status.failed { color: #e74c3c; }
 .acct-btn.delete  { background: rgba(220,38,38,0.1); color: #DC2626; }
 .acct-add {
   display: flex;
@@ -852,7 +856,8 @@ function renderAccounts() {
       + '</div>'
       + '<button class="acct-btn cookie" onclick="showLoginModal(\'' + acct.id + '\')" title="로그인">로그인</button>'
       + '<button class="acct-btn delete" onclick="deleteAccount(\'' + platform + '\',\'' + acct.id + '\')" title="삭제">&times;</button>'
-      + '<button class="acct-btn publish" onclick="publishAccount(\'' + platform + '\',\'' + acct.id + '\',this)">발행</button>'
+      + '<button class="acct-btn publish" id="pub-btn-' + acct.id + '" onclick="publishAccount(\'' + platform + '\',\'' + acct.id + '\',this)">발행</button>'
+      + '<span class="pub-status" id="pub-status-' + acct.id + '"></span>'
       + '</div>';
   }).join('');
 }
@@ -934,27 +939,77 @@ async function deleteAccount(platform, id) {
   } catch (e) { alert('서버 연결 실패'); }
 }
 
+var _pollTimers = {};
+
 async function publishAccount(platform, id, btn) {
   btn.disabled = true;
   btn.textContent = '발행 중...';
+  var statusEl = document.getElementById('pub-status-' + id);
+  if (statusEl) { statusEl.textContent = '발행 요청 중...'; statusEl.className = 'pub-status processing'; }
+
   try {
-    const res = await fetch('/api/accounts/' + id + '/publish', { method: 'POST' });
-    const data = await res.json();
+    var res = await fetch('/api/accounts/' + id + '/publish', { method: 'POST' });
+    var data = await res.json();
     if (res.ok && data.success) {
-      btn.textContent = '완료!';
-      setTimeout(function() { btn.textContent = '발행'; btn.disabled = false; }, 2000);
-      fetchStatus();
-      fetchLogs();
+      startStatusPoll(id, btn);
     } else {
-      alert(data.error || '발행 실패');
+      if (statusEl) { statusEl.textContent = data.error || '발행 실패'; statusEl.className = 'pub-status failed'; }
       btn.textContent = '발행';
       btn.disabled = false;
     }
   } catch (e) {
-    alert('서버 연결 실패');
+    if (statusEl) { statusEl.textContent = '서버 연결 실패'; statusEl.className = 'pub-status failed'; }
     btn.textContent = '발행';
     btn.disabled = false;
   }
+}
+
+function startStatusPoll(id, btn) {
+  var statusEl = document.getElementById('pub-status-' + id);
+  if (_pollTimers[id]) clearInterval(_pollTimers[id]);
+
+  _pollTimers[id] = setInterval(async function() {
+    try {
+      var res = await fetch('/api/accounts/' + id + '/status');
+      var data = await res.json();
+
+      if (data.status === 'processing') {
+        if (statusEl) { statusEl.textContent = '발행 중... (' + (data.keyword || '') + ')'; statusEl.className = 'pub-status processing'; }
+      } else if (data.status === 'published') {
+        clearInterval(_pollTimers[id]);
+        delete _pollTimers[id];
+        if (statusEl) { statusEl.textContent = '발행 완료!'; statusEl.className = 'pub-status published'; }
+        btn.textContent = '발행';
+        btn.disabled = false;
+        fetchStatus();
+        fetchLogs();
+        setTimeout(function() { if (statusEl) statusEl.textContent = ''; }, 5000);
+      } else if (data.status === 'failed') {
+        clearInterval(_pollTimers[id]);
+        delete _pollTimers[id];
+        if (statusEl) { statusEl.textContent = '실패: ' + (data.error_message || '알 수 없는 오류'); statusEl.className = 'pub-status failed'; }
+        btn.textContent = '발행';
+        btn.disabled = false;
+        fetchLogs();
+      } else {
+        // idle — 아직 processing 시작 전이거나 완료 후
+        // 잠시 더 대기
+      }
+    } catch (e) {
+      // 네트워크 에러는 무시하고 계속 폴링
+    }
+  }, 2000);
+
+  // 5분 후 자동 폴링 중단 (안전장치)
+  setTimeout(function() {
+    if (_pollTimers[id]) {
+      clearInterval(_pollTimers[id]);
+      delete _pollTimers[id];
+      btn.textContent = '발행';
+      btn.disabled = false;
+      if (statusEl) { statusEl.textContent = '시간 초과 - 로그를 확인하세요'; statusEl.className = 'pub-status failed'; }
+    }
+  }, 300000);
 }
 
 // ---- Init & auto-refresh ----
