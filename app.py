@@ -2819,15 +2819,30 @@ def api_accounts_publish(entry_id):
 
     # 백그라운드 스레드로 발행 실행 (Gunicorn timeout 방지)
     def _run_publish(kw_id):
+        import datetime as _dt
+        log_path = os.path.join(_APP_DIR, "error.log")
         try:
             import scheduler as sched_mod
-            sched_mod.run_single(kw_id)
+            result = sched_mod.run_single(kw_id)
+            if not result.get("success"):
+                err_msg = (
+                    f"[{_dt.datetime.now()}] [Publish] 발행 실패 (kw_id={kw_id}): "
+                    f"{result.get('error', '알 수 없는 오류')}\n"
+                )
+                print(err_msg)
+                with open(log_path, "a", encoding="utf-8") as f:
+                    f.write(err_msg)
+            else:
+                print(f"[{_dt.datetime.now()}] [Publish] 발행 성공 (kw_id={kw_id})")
         except Exception as e:
-            import traceback, datetime
-            err_msg = f"[{datetime.datetime.now()}] [Publish] 백그라운드 발행 실패 (kw_id={kw_id}): {e}\n{traceback.format_exc()}\n"
+            import traceback
+            err_msg = (
+                f"[{_dt.datetime.now()}] [Publish] 발행 예외 (kw_id={kw_id}): {e}\n"
+                f"{traceback.format_exc()}\n"
+            )
             print(err_msg)
             try:
-                with open(os.path.join(_APP_DIR, "error.log"), "a", encoding="utf-8") as f:
+                with open(log_path, "a", encoding="utf-8") as f:
                     f.write(err_msg)
             except Exception:
                 pass
