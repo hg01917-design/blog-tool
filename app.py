@@ -1256,12 +1256,25 @@ def generate():
     # 정부지원금/공략 등 최신 정보가 필요한 경우 웹 검색
     use_web_search = (category == "government" or subtype == "walkthrough")
 
+    # 네이버 도입부 랜덤 선택
+    naver_intros = [
+        "이거 알고 계셨어요? 저는 최근에야 알았는데 꽤 쏠쏠하더라고요.",
+        "주변에서 이거 신청했다는 얘기 듣고 저도 찾아봤어요.",
+        "작년에 이거 몰라서 그냥 넘겼는데, 올해는 꼭 챙기려고요.",
+        "아이 학교 엄마한테 듣고 바로 검색해봤어요.",
+        "반신반의하면서 해봤는데 진짜 되더라고요.",
+        "다른 방법이랑 비교해봤는데 이게 제일 간편했어요.",
+        "이맘때쯤 꼭 챙겨야 하는 거라서 정리해봤어요.",
+    ]
+    selected_intro = random.choice(naver_intros)
+
     # 플랫폼별 body_prompt 분리
     if platform == "naver":
         body_prompt = (
             f"키워드: {keyword}\n"
             f"제목: {title}\n\n"
-            "위의 시스템 프롬프트에 정의된 말투, 도입부 패턴, 글 구조를 그대로 따라서 본문만 작성해줘.\n"
+            f"도입부는 반드시 이 문장으로 시작해: '{selected_intro}'\n"
+            "이후 위의 시스템 프롬프트에 정의된 말투, 도입부 패턴, 글 구조를 그대로 따라서 본문만 작성해줘.\n"
             "제목, 태그 포함하지 마. HTML 태그 사용 금지. ##H2:소제목## 형식 사용."
         )
     elif platform == "tistory":
