@@ -2108,25 +2108,26 @@ def publish_wordpress():
 @app.route("/publish-naver", methods=["POST"])
 def publish_naver():
     """네이버 블로그 Playwright 자동 발행."""
-    if not NAVER_BLOG_ID:
-        return jsonify({"error": "NAVER_BLOG_ID가 설정되지 않았습니다. .env에 추가해주세요."}), 400
-
     import naver_playwright
-
-    if not naver_playwright.cookies_exist():
-        return jsonify({"error": "네이버 쿠키가 없습니다. /naver-login으로 먼저 로그인해주세요."}), 400
 
     data = request.get_json()
     title = data.get("title", "")
     body = data.get("body", "")
     tags_str = data.get("tags", "")
+    blog_id = data.get("blog_id", "") or NAVER_BLOG_ID
+
+    if not blog_id:
+        return jsonify({"error": "blog_id가 지정되지 않았습니다."}), 400
+
+    if not naver_playwright.cookies_exist():
+        return jsonify({"error": "네이버 쿠키가 없습니다. /naver-login으로 먼저 로그인해주세요."}), 400
 
     if not title or not body:
         return jsonify({"error": "제목과 본문이 필요합니다."}), 400
 
     tag_list = [t.strip() for t in tags_str.split(",") if t.strip()][:10]
 
-    result = naver_playwright.publish_to_naver(title, body, tag_list)
+    result = naver_playwright.publish_to_naver(title, body, tag_list, blog_id=blog_id)
 
     if result.get("success"):
         return jsonify(result)

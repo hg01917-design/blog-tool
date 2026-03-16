@@ -124,7 +124,8 @@ def upload_cookies(cookies_json: str) -> dict:
         return {"success": False, "error": f"JSON 파싱 실패: {e}"}
 
 
-def publish_to_naver(title: str, body_html: str, tags: list[str]) -> dict:
+def publish_to_naver(title: str, body_html: str, tags: list[str],
+                     blog_id: str = None) -> dict:
     """네이버 블로그에 글을 자동 발행합니다.
 
     발행 순서:
@@ -138,10 +139,12 @@ def publish_to_naver(title: str, body_html: str, tags: list[str]) -> dict:
         title: 글 제목
         body_html: HTML 본문 (h2/h3 소제목 포함)
         tags: 태그 리스트 (최대 10개)
+        blog_id: 네이버 블로그 ID (None이면 환경변수에서 읽음)
     """
     global _last_publish_time
 
-    blog_id = _get_blog_id()
+    if not blog_id:
+        blog_id = _get_blog_id()
     if not blog_id:
         return {"success": False, "error": "NAVER_BLOG_ID가 설정되지 않았습니다.", "steps": []}
 
