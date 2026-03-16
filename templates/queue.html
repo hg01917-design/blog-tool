@@ -246,26 +246,16 @@ h1 { font-family: 'Bebas Neue', cursive; font-size: 36px; letter-spacing: 0.06em
     <div class="card-title">키워드 추가</div>
     <div class="form-row">
       <input class="form-input" id="kwInput" type="text" placeholder="키워드를 입력하세요" autofocus>
-      <select class="form-select" id="catSelect">
-        <option value="travel">여행</option>
-        <option value="it">IT</option>
-        <option value="parenting">육아</option>
-        <option value="food">음식</option>
-        <option value="government">정부지원금</option>
-        <option value="finance">재테크</option>
-        <option value="health">건강</option>
-        <option value="living">살림/생활</option>
+      <select class="form-select" id="presetSelect" onchange="applyPreset()">
+        <option value="naver-living">네이버 (살림/생활)</option>
+        <option value="naver-government">네이버 (정부지원금)</option>
+        <option value="tistory-travel">티스토리 (여행)</option>
+        <option value="tistory-it">티스토리 (IT)</option>
+        <option value="wordpress-government">워드프레스 (정부지원금)</option>
       </select>
-      <select class="form-select" id="platformSelect">
-        <option value="naver">네이버</option>
-        <option value="tistory">티스토리</option>
-      </select>
-      <select class="form-select" id="toneSelect">
-        <option value="informative">정보 전달형</option>
-        <option value="experience">체험형</option>
-        <option value="casual">일상 대화형</option>
-        <option value="professional">전문가형</option>
-      </select>
+      <input type="hidden" id="catSelect" value="living">
+      <input type="hidden" id="platformSelect" value="naver">
+      <input type="hidden" id="toneSelect" value="informative">
       <button class="btn primary" id="addBtn" onclick="addKeyword()">추가</button>
     </div>
 
@@ -356,6 +346,22 @@ async function loadQueue() {
   } catch(e) {
     showToast('큐 로드 실패: ' + e.message);
   }
+}
+
+// ── Preset Mapping ──
+const PRESETS = {
+  'naver-living':        { platform: 'naver',     category: 'living',     tone: 'informative' },
+  'naver-government':    { platform: 'naver',     category: 'government', tone: 'informative' },
+  'tistory-travel':      { platform: 'tistory',   category: 'travel',     tone: 'experience' },
+  'tistory-it':          { platform: 'tistory',   category: 'it',         tone: 'informative' },
+  'wordpress-government':{ platform: 'wordpress',  category: 'government', tone: 'informative' },
+};
+function applyPreset() {
+  const p = PRESETS[$('presetSelect').value];
+  if (!p) return;
+  $('catSelect').value = p.category;
+  $('platformSelect').value = p.platform;
+  $('toneSelect').value = p.tone;
 }
 
 // ── Add Single Keyword ──
