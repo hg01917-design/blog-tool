@@ -981,6 +981,10 @@ def generate():
     }
     tone_desc = tone_map.get(tone, tone_map["informative"])
 
+    # 네이버 + 정부지원금: 워킹맘 공감형 톤 자동 설정
+    if platform == "naver" and category == "government":
+        tone_desc = "워킹맘 공감형 (직접 찾아보고 신청해본 경험 기반)"
+
     system_prompt = seo_prompts[platform]
 
     # 현재 연도 안내 (AI가 과거 연도를 쓰지 않도록)
@@ -1150,6 +1154,8 @@ def generate():
                 "7. 광고 플레이스홀더 절대 금지, 광고는 자동 삽입됩니다\n"
                 "8. 면책 문구는 자동 삽입되므로 본문에 넣지 마세요\n"
             )
+            if platform == "naver":
+                body_prompt += "중요: 위의 시스템 프롬프트에 정의된 말투, 도입부 패턴, 글 구조를 반드시 따르세요.\n"
             if not meta_desc_instruction:
                 body_prompt += "\n응답: HTML 본문만 출력하세요. 제목이나 태그는 포함하지 마세요."
             else:
