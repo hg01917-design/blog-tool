@@ -968,12 +968,17 @@ function startStatusPoll(id, btn) {
   var statusEl = document.getElementById('pub-status-' + id);
   if (_pollTimers[id]) clearInterval(_pollTimers[id]);
 
+  var pollStart = Date.now();
+  var sawProcessing = false;
+
   _pollTimers[id] = setInterval(async function() {
     try {
       var res = await fetch('/api/accounts/' + id + '/status');
+      if (!res.ok) return;
       var data = await res.json();
 
       if (data.status === 'processing') {
+        sawProcessing = true;
         if (statusEl) { statusEl.textContent = '발행 중... (' + (data.keyword || '') + ')'; statusEl.className = 'pub-status processing'; }
       } else if (data.status === 'published') {
         clearInterval(_pollTimers[id]);
@@ -992,8 +997,18 @@ function startStatusPoll(id, btn) {
         btn.disabled = false;
         fetchLogs();
       } else {
-        // idle — 아직 processing 시작 전이거나 완료 후
-        // 잠시 더 대기
+        // idle — 스레드 시작 전 대기. 30초 경과 + processing 본 적 없으면 포기
+        if (!sawProcessing && Date.now() - pollStart > 30000) {
+          clearInterval(_pollTimers[id]);
+          delete _pollTimers[id];
+          if (statusEl) { statusEl.textContent = '상태 확인 실패 - 로그를 확인하세요'; statusEl.className = 'pub-status failed'; }
+          btn.textContent = '발행';
+          btn.disabled = false;
+          fetchLogs();
+        } else if (statusEl) {
+          statusEl.textContent = '발행 준비 중...';
+          statusEl.className = 'pub-status processing';
+        }
       }
     } catch (e) {
       // 네트워크 에러는 무시하고 계속 폴링

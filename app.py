@@ -2863,8 +2863,9 @@ def api_accounts_publish(entry_id):
     if not keyword_entry:
         return jsonify({"error": "대기 중인 키워드가 없습니다. 키워드 큐에 먼저 추가하세요."}), 400
 
-    # 발행 시작 시 account_id 기록
+    # 발행 시작 시 account_id 기록 + status를 processing으로 설정
     keyword_entry["account_id"] = entry_id
+    keyword_entry["status"] = "processing"
     _save_json(_QUEUE_PATH, queue)
 
     # 백그라운드 스레드로 발행 실행 (Gunicorn timeout 방지)
@@ -2935,7 +2936,15 @@ def api_accounts_status(entry_id):
 
     queue = _load_json(_QUEUE_PATH, [])
 
-    # processing 중인 키워드 먼저 찾기
+    # 1) 이 계정(account_id)으로 processing 중인 키워드
+    for q in queue:
+        if q.get("status") == "processing" and q.get("account_id") == entry_id:
+            return jsonify({
+                "status": "processing",
+                "keyword": q.get("keyword", ""),
+                "keyword_id": q.get("id", ""),
+            })
+    # fallback: 같은 플랫폼 processing
     for q in queue:
         if q.get("status") == "processing" and q.get("platform") == target_platform:
             return jsonify({
@@ -2944,25 +2953,49 @@ def api_accounts_status(entry_id):
                 "keyword_id": q.get("id", ""),
             })
 
-    # 가장 최근 완료/실패 키워드 (해당 플랫폼)
-    latest = None
-    for q in reversed(queue):
-        if q.get("platform") == target_platform and q.get("status") in ("published", "failed"):
-            latest = q
+    # 2) 발행 로그에서 최근 결과 확인 (큐에서 status가 pending으로 복구될 수 있으므로)
+    logs = _load_json(_LOG_PATH, [])
+    latest_log = None
+    for log in reversed(logs):
+        if log.get("platform") == target_platform:
+            latest_log = log
             break
 
+    # 3) 큐에서 최근 published/failed (account_id 또는 platform 매칭)
+    latest_q = None
+    for q in reversed(queue):
+        if q.get("status") in ("published", "failed"):
+            if q.get("account_id") == entry_id or (not q.get("account_id") and q.get("platform") == target_platform):
+                latest_q = q
+                break
+
+    # 로그와 큐 중 더 최근 것 사용
+    latest = None
+    if latest_q and latest_log:
+        q_time = latest_q.get("published_at") or latest_q.get("added_at") or ""
+        l_time = latest_log.get("finished_at") or ""
+        latest = latest_q if q_time >= l_time else latest_log
+    elif latest_q:
+        latest = latest_q
+    elif latest_log:
+        latest = latest_log
+
     if latest:
+        status = latest.get("status", "failed")
+        if not status or status not in ("published", "failed"):
+            status = "published" if latest.get("success") else "failed"
         return jsonify({
-            "status": latest["status"],
-            "keyword": latest.get("keyword", ""),
-            "keyword_id": latest.get("id", ""),
-            "error_message": latest.get("error", ""),
+            "status": status,
+            "keyword": latest.get("keyword", latest.get("article_title", "")),
+            "keyword_id": latest.get("keyword_id", latest.get("id", "")),
+            "error_message": latest.get("error", latest.get("error_message", "")),
             "post_url": latest.get("post_url", ""),
-            "published_at": latest.get("published_at", ""),
+            "published_at": latest.get("published_at", latest.get("finished_at", "")),
         })
 
-    # pending만 있거나 큐 비어있음
-    pending_count = sum(1 for q in queue if q.get("status") == "pending" and q.get("platform") == target_platform)
+    # 4) 아무 결과 없음
+    pending_count = sum(1 for q in queue if q.get("status") == "pending"
+                        and (q.get("account_id") == entry_id or q.get("platform") == target_platform))
     return jsonify({
         "status": "idle",
         "pending_count": pending_count,
