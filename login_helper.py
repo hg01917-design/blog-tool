@@ -65,9 +65,17 @@ def main():
         try:
             page.goto(LOGIN_URL, wait_until="domcontentloaded")
             print(f"[2/4] 로그인 페이지가 열렸습니다. 브라우저에서 로그인하세요.")
+            print(f"      (브라우저를 닫지 마세요!)")
             print()
             input("      >>> 로그인 완료 후 여기서 Enter를 누르세요 <<<")
             print()
+
+            # 브라우저가 아직 열려있는지 확인
+            try:
+                page.evaluate("1")
+            except Exception:
+                print(f"[실패] 브라우저가 닫혔습니다. 다시 실행해주세요.")
+                return
 
             # 블로그 페이지 방문 → 로그인 상태 + 블로그 쿠키 수집
             print(f"[3/4] 로그인 상태를 확인합니다...")
@@ -88,13 +96,14 @@ def main():
 
             print(f"      로그인 확인 완료! 쿠키 {len(all_cookies)}개 수집")
 
-            # 서버로 쿠키 전송
+            # 서버로 쿠키 전송 (X-Cookie-Token 헤더로 인증)
             print(f"[4/4] 서버로 쿠키를 전송합니다...")
             api_url = f"{server_url}/api/accounts/{account_id}/cookie"
 
             resp = requests.post(
                 api_url,
                 json={"cookies": all_cookies},
+                headers={"X-Cookie-Token": "blog-tool-cookie-upload"},
                 timeout=30,
             )
 
@@ -112,7 +121,10 @@ def main():
         except Exception as e:
             print(f"[오류] {e}")
         finally:
-            browser.close()
+            try:
+                browser.close()
+            except Exception:
+                pass
 
 
 if __name__ == "__main__":

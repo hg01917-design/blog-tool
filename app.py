@@ -203,6 +203,10 @@ def require_login():
     allowed = ("login_page", "static", "indexnow_key_file")
     if request.endpoint in allowed:
         return
+    # login_helper.py에서 쿠키 업로드 시 토큰 인증 허용
+    if (request.endpoint == "api_accounts_cookie_upload"
+            and request.headers.get("X-Cookie-Token") == "blog-tool-cookie-upload"):
+        return
     if not session.get("authenticated"):
         if request.is_json or request.headers.get("X-Requested-With") == "XMLHttpRequest":
             from flask import abort
