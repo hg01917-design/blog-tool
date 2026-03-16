@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AutoBlog — 키워드 큐</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { min-height: 100vh; background: #F5F1EB; font-family: 'Noto Sans KR', sans-serif; color: #141210; }
+body::after {
+  content: '';
+  position: fixed; inset: 0; pointer-events: none; z-index: 999;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23g)' opacity='0.025'/%3E%3C/svg%3E");
+}
+
+/* TOPBAR */
+.topbar {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 0 44px; height: 56px;
+  border-bottom: 1px solid rgba(20,18,16,0.09);
+  animation: fadeDown 0.5s ease both;
+}
+.brand { display: flex; align-items: baseline; gap: 9px; text-decoration: none; color: inherit; }
+.brand-name { font-family: 'Bebas Neue', cursive; font-size: 22px; letter-spacing: 0.14em; }
+.brand-ver {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase;
+  color: #9B958E; background: rgba(20,18,16,0.07); padding: 2px 7px; border-radius: 3px;
+}
+.topbar-right { display: flex; align-items: center; gap: 24px; }
+.topbar-link {
+  font-size: 10px; font-weight: 500; letter-spacing: 0.15em; text-transform: uppercase;
+  color: #9B958E; text-decoration: none; transition: color 0.2s;
+}
+.topbar-link:hover { color: #141210; }
+.topbar-link.active { color: #141210; font-weight: 700; }
+.topbar-cta {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.15em; text-transform: uppercase;
+  color: #E8470A; text-decoration: none;
+}
+
+/* CONTAINER */
+.container { max-width: 1100px; margin: 0 auto; padding: 40px 24px; }
+
+h1 { font-family: 'Bebas Neue', cursive; font-size: 36px; letter-spacing: 0.06em; margin-bottom: 8px; animation: riseUp 0.65s cubic-bezier(0.22,1,0.36,1) both; }
+.subtitle { font-size: 13px; color: #9B958E; margin-bottom: 28px; }
+
+/* STATS BAR */
+.stats-bar {
+  display: flex; gap: 16px; margin-bottom: 24px; flex-wrap: wrap;
+  animation: riseUp 0.65s cubic-bezier(0.22,1,0.36,1) 0.06s both;
+}
+.stat-item {
+  display: flex; align-items: center; gap: 8px;
+  background: #fff; border: 1px solid rgba(20,18,16,0.08); border-radius: 10px;
+  padding: 14px 20px; min-width: 140px;
+}
+.stat-num {
+  font-family: 'Bebas Neue', cursive; font-size: 28px; letter-spacing: 0.04em; line-height: 1;
+}
+.stat-label { font-size: 11px; color: #9B958E; font-weight: 500; }
+.stat-total .stat-num { color: #141210; }
+.stat-pending .stat-num { color: #9B958E; }
+.stat-published .stat-num { color: #16A34A; }
+.stat-failed .stat-num { color: #E8470A; }
+
+/* CARD */
+.card {
+  background: #fff; border-radius: 10px; padding: 24px 28px;
+  border: 1px solid rgba(20,18,16,0.08); margin-bottom: 20px;
+  animation: riseUp 0.65s cubic-bezier(0.22,1,0.36,1) 0.12s both;
+}
+.card-title { font-size: 15px; font-weight: 700; margin-bottom: 16px; }
+
+/* FORM */
+.form-row { display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+.form-input {
+  flex: 1; min-width: 200px; padding: 11px 16px; border: 1px solid rgba(20,18,16,0.15);
+  border-radius: 8px; font-size: 14px; font-family: inherit; background: #fff;
+  outline: none; transition: border-color 0.2s;
+}
+.form-input:focus { border-color: #141210; }
+.form-select {
+  padding: 11px 16px; border: 1px solid rgba(20,18,16,0.15);
+  border-radius: 8px; font-size: 13px; font-family: inherit; background: #fff;
+  outline: none; cursor: pointer; transition: border-color 0.2s;
+  min-width: 130px;
+}
+.form-select:focus { border-color: #141210; }
+
+.btn {
+  font-size: 12px; font-weight: 600; padding: 11px 20px; border-radius: 8px;
+  border: 1px solid rgba(20,18,16,0.15); background: #fff; cursor: pointer;
+  transition: all 0.15s; white-space: nowrap; font-family: inherit;
+}
+.btn:hover { background: #141210; color: #fff; border-color: #141210; }
+.btn.primary { background: #141210; color: #fff; border-color: #141210; }
+.btn.primary:hover { opacity: 0.85; }
+.btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+.bulk-section { margin-top: 16px; border-top: 1px solid rgba(20,18,16,0.06); padding-top: 16px; }
+.bulk-label { font-size: 12px; color: #9B958E; font-weight: 500; margin-bottom: 8px; }
+.bulk-textarea {
+  width: 100%; min-height: 80px; padding: 12px 16px; border: 1px solid rgba(20,18,16,0.15);
+  border-radius: 8px; font-size: 13px; font-family: inherit; background: #fff;
+  outline: none; resize: vertical; transition: border-color 0.2s;
+}
+.bulk-textarea:focus { border-color: #141210; }
+.bulk-row { display: flex; gap: 10px; margin-top: 10px; align-items: center; }
+.bulk-hint { font-size: 11px; color: #9B958E; }
+
+/* CATEGORY FILTER */
+.cat-row { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
+.cat-btn {
+  font-size: 12px; font-weight: 600; padding: 8px 18px; border-radius: 20px;
+  border: 1px solid rgba(20,18,16,0.15); background: #fff; cursor: pointer;
+  transition: all 0.2s; white-space: nowrap;
+}
+.cat-btn:hover { border-color: #141210; }
+.cat-btn.active { background: #141210; color: #fff; border-color: #141210; }
+
+/* QUEUE TABLE */
+.table-wrap { overflow-x: auto; }
+.q-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.q-table th {
+  text-align: left; font-size: 10px; font-weight: 700; letter-spacing: 0.1em;
+  text-transform: uppercase; color: #9B958E; padding: 9px 10px;
+  border-bottom: 2px solid rgba(20,18,16,0.1); white-space: nowrap;
+}
+.q-table td { padding: 10px 10px; border-bottom: 1px solid rgba(20,18,16,0.05); vertical-align: middle; }
+.q-table tbody tr { transition: background 0.12s; }
+.q-table tbody tr:hover { background: rgba(20,18,16,0.025); }
+
+/* STATUS BADGES */
+.badge {
+  display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: 0.06em;
+  padding: 3px 10px; border-radius: 12px;
+}
+.badge-pending { background: rgba(20,18,16,0.06); color: #9B958E; }
+.badge-processing { background: rgba(234,179,8,0.12); color: #B45309; }
+.badge-published { background: rgba(22,163,74,0.1); color: #16A34A; }
+.badge-failed { background: rgba(232,71,10,0.1); color: #E8470A; }
+
+/* ACTION BUTTONS */
+.act-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; border-radius: 6px; border: 1px solid rgba(20,18,16,0.1);
+  background: #fff; cursor: pointer; font-size: 13px; transition: all 0.15s;
+  color: #9B958E;
+}
+.act-btn:hover { background: #141210; color: #fff; border-color: #141210; }
+.act-btn.danger:hover { background: #E8470A; border-color: #E8470A; }
+
+/* EMPTY STATE */
+.empty-state {
+  text-align: center; padding: 48px 20px; color: #9B958E; font-size: 14px;
+}
+.empty-state svg { width: 48px; height: 48px; color: #D5D0CA; margin-bottom: 12px; }
+
+/* TOAST */
+.toast {
+  position: fixed; bottom: 24px; right: 24px; z-index: 1000;
+  background: #141210; color: #fff; padding: 12px 20px; border-radius: 8px;
+  font-size: 13px; font-weight: 500; opacity: 0; transform: translateY(10px);
+  transition: all 0.3s ease; pointer-events: none;
+}
+.toast.show { opacity: 1; transform: translateY(0); }
+
+.kw-col { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.title-col { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: #6B6560; }
+.date-col { white-space: nowrap; font-size: 12px; color: #9B958E; }
+.actions-col { white-space: nowrap; display: flex; gap: 4px; }
+
+.spinner {
+  display: inline-block; width: 14px; height: 14px;
+  border: 2px solid rgba(20,18,16,0.15); border-top-color: #141210;
+  border-radius: 50%; animation: spin 0.6s linear infinite; vertical-align: middle;
+  margin-right: 6px;
+}
+
+@keyframes riseUp { from { opacity:0; transform:translateY(32px); } to { opacity:1; transform:translateY(0); } }
+@keyframes fadeDown { from { opacity:0; transform:translateY(-10px); } to { opacity:1; transform:translateY(0); } }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+@media (max-width: 768px) {
+  .topbar { padding: 0 20px; }
+  .container { padding: 24px 16px; }
+  .form-row { flex-direction: column; }
+  .form-select { min-width: 100%; }
+  .stats-bar { gap: 10px; }
+  .stat-item { min-width: 0; flex: 1; padding: 10px 14px; }
+  .stat-num { font-size: 22px; }
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <a class="brand" href="/">
+    <span class="brand-name">AutoBlog</span>
+    <span class="brand-ver">v2.0</span>
+  </a>
+  <nav class="topbar-right">
+    <a class="topbar-link" href="/blog">대시보드</a>
+    <a class="topbar-link active" href="/blog/queue">키워드 큐</a>
+    <a class="topbar-link" href="/blog/write">수동 글쓰기</a>
+    <a class="topbar-link" href="/settings">설정</a>
+    <a class="topbar-cta" href="/logout">로그아웃</a>
+  </nav>
+</header>
+
+<div class="container">
+  <h1>KEYWORD QUEUE</h1>
+  <p class="subtitle">키워드를 추가하면 자동으로 AI 글 생성 및 발행이 진행됩니다</p>
+
+  <!-- STATS BAR -->
+  <div class="stats-bar">
+    <div class="stat-item stat-total">
+      <div>
+        <div class="stat-num" id="statTotal">0</div>
+        <div class="stat-label">전체</div>
+      </div>
+    </div>
+    <div class="stat-item stat-pending">
+      <div>
+        <div class="stat-num" id="statPending">0</div>
+        <div class="stat-label">대기</div>
+      </div>
+    </div>
+    <div class="stat-item stat-published">
+      <div>
+        <div class="stat-num" id="statPublished">0</div>
+        <div class="stat-label">발행완료</div>
+      </div>
+    </div>
+    <div class="stat-item stat-failed">
+      <div>
+        <div class="stat-num" id="statFailed">0</div>
+        <div class="stat-label">실패</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ADD KEYWORD CARD -->
+  <div class="card">
+    <div class="card-title">키워드 추가</div>
+    <div class="form-row">
+      <input class="form-input" id="kwInput" type="text" placeholder="키워드를 입력하세요" autofocus>
+      <select class="form-select" id="catSelect">
+        <option value="travel">여행</option>
+        <option value="it">IT</option>
+        <option value="parenting">육아</option>
+        <option value="food">음식</option>
+        <option value="government">정부지원금</option>
+        <option value="finance">재테크</option>
+        <option value="health">건강</option>
+        <option value="living">살림/생활</option>
+      </select>
+      <select class="form-select" id="platformSelect">
+        <option value="naver">네이버</option>
+        <option value="tistory">티스토리</option>
+      </select>
+      <select class="form-select" id="toneSelect">
+        <option value="informative">정보 전달형</option>
+        <option value="experience">체험형</option>
+        <option value="casual">일상 대화형</option>
+        <option value="professional">전문가형</option>
+      </select>
+      <button class="btn primary" id="addBtn" onclick="addKeyword()">추가</button>
+    </div>
+
+    <div class="bulk-section">
+      <div class="bulk-label">일괄 추가 (한 줄에 하나씩)</div>
+      <textarea class="bulk-textarea" id="bulkTextarea" placeholder="키워드1&#10;키워드2&#10;키워드3"></textarea>
+      <div class="bulk-row">
+        <button class="btn" id="bulkBtn" onclick="bulkAdd()">일괄 추가</button>
+        <span class="bulk-hint">위에서 선택한 카테고리, 플랫폼, 톤이 일괄 적용됩니다</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- CATEGORY FILTER -->
+  <div class="cat-row" id="catRow">
+    <button class="cat-btn active" data-cat="all" onclick="filterCat('all')">전체</button>
+    <button class="cat-btn" data-cat="travel" onclick="filterCat('travel')">여행</button>
+    <button class="cat-btn" data-cat="it" onclick="filterCat('it')">IT</button>
+    <button class="cat-btn" data-cat="parenting" onclick="filterCat('parenting')">육아</button>
+    <button class="cat-btn" data-cat="food" onclick="filterCat('food')">음식</button>
+    <button class="cat-btn" data-cat="government" onclick="filterCat('government')">정부지원금</button>
+    <button class="cat-btn" data-cat="finance" onclick="filterCat('finance')">재테크</button>
+    <button class="cat-btn" data-cat="health" onclick="filterCat('health')">건강</button>
+    <button class="cat-btn" data-cat="living" onclick="filterCat('living')">살림/생활</button>
+  </div>
+
+  <!-- QUEUE TABLE -->
+  <div class="card" style="animation-delay: 0.18s;">
+    <div class="table-wrap">
+      <table class="q-table">
+        <thead>
+          <tr>
+            <th>키워드</th>
+            <th>카테고리</th>
+            <th>플랫폼</th>
+            <th>톤</th>
+            <th>상태</th>
+            <th>추가일</th>
+            <th>발행일</th>
+            <th>제목</th>
+            <th>액션</th>
+          </tr>
+        </thead>
+        <tbody id="queueBody"></tbody>
+      </table>
+    </div>
+    <div class="empty-state" id="emptyState" style="display:none;">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/>
+      </svg>
+      <div>키워드를 추가하면 자동으로 발행됩니다</div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+const CAT_LABELS = {
+  travel: '여행', it: 'IT', parenting: '육아', food: '음식',
+  government: '정부지원금', finance: '재테크', health: '건강', living: '살림/생활'
+};
+const PLATFORM_LABELS = { naver: '네이버', tistory: '티스토리' };
+const TONE_LABELS = { informative: '정보 전달형', experience: '체험형', casual: '일상 대화형', professional: '전문가형' };
+const STATUS_MAP = {
+  pending:    { label: '대기',     cls: 'badge-pending' },
+  processing: { label: '처리중',   cls: 'badge-processing' },
+  published:  { label: '발행완료', cls: 'badge-published' },
+  failed:     { label: '실패',     cls: 'badge-failed' }
+};
+
+let queueData = [];
+let currentFilter = 'all';
+
+// ── Init ──
+document.addEventListener('DOMContentLoaded', loadQueue);
+$('kwInput').addEventListener('keydown', e => { if (e.key === 'Enter') addKeyword(); });
+
+// ── Load Queue ──
+async function loadQueue() {
+  try {
+    const resp = await fetch('/api/queue');
+    const data = await resp.json();
+    queueData = data.items || data || [];
+    renderAll();
+  } catch(e) {
+    showToast('큐 로드 실패: ' + e.message);
+  }
+}
+
+// ── Add Single Keyword ──
+async function addKeyword() {
+  const keyword = $('kwInput').value.trim();
+  if (!keyword) { $('kwInput').focus(); return; }
+
+  $('addBtn').disabled = true;
+  try {
+    const resp = await fetch('/api/queue', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        keyword,
+        category: $('catSelect').value,
+        platform: $('platformSelect').value,
+        tone: $('toneSelect').value
+      })
+    });
+    const data = await resp.json();
+    if (data.error) { showToast(data.error); return; }
+    queueData.unshift(data.item || data);
+    renderAll();
+    $('kwInput').value = '';
+    showToast('키워드 추가됨: ' + keyword);
+  } catch(e) {
+    showToast('추가 실패: ' + e.message);
+  } finally {
+    $('addBtn').disabled = false;
+    $('kwInput').focus();
+  }
+}
+
+// ── Bulk Add ──
+async function bulkAdd() {
+  const text = $('bulkTextarea').value.trim();
+  if (!text) return;
+
+  const keywords = text.split('\n').map(l => l.trim()).filter(l => l);
+  if (!keywords.length) return;
+
+  $('bulkBtn').disabled = true;
+  $('bulkBtn').textContent = '추가 중...';
+  try {
+    const resp = await fetch('/api/queue/bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        keywords,
+        category: $('catSelect').value,
+        platform: $('platformSelect').value,
+        tone: $('toneSelect').value
+      })
+    });
+    const data = await resp.json();
+    if (data.error) { showToast(data.error); return; }
+    const added = data.items || data || [];
+    queueData = [...added, ...queueData];
+    renderAll();
+    $('bulkTextarea').value = '';
+    showToast(keywords.length + '개 키워드 일괄 추가됨');
+  } catch(e) {
+    showToast('일괄 추가 실패: ' + e.message);
+  } finally {
+    $('bulkBtn').disabled = false;
+    $('bulkBtn').textContent = '일괄 추가';
+  }
+}
+
+// ── Delete ──
+async function deleteItem(id) {
+  if (!confirm('이 키워드를 삭제하시겠습니까?')) return;
+  try {
+    await fetch('/api/queue/' + id, { method: 'DELETE' });
+    queueData = queueData.filter(item => item.id !== id);
+    renderAll();
+    showToast('삭제됨');
+  } catch(e) {
+    showToast('삭제 실패: ' + e.message);
+  }
+}
+
+// ── Retry ──
+async function retryItem(id) {
+  try {
+    const resp = await fetch('/api/queue/' + id + '/retry', { method: 'POST' });
+    const data = await resp.json();
+    const idx = queueData.findIndex(item => item.id === id);
+    if (idx !== -1) queueData[idx] = data.item || { ...queueData[idx], status: 'pending' };
+    renderAll();
+    showToast('재시도 등록됨');
+  } catch(e) {
+    showToast('재시도 실패: ' + e.message);
+  }
+}
+
+// ── Priority Up ──
+async function priorityUp(id) {
+  try {
+    const resp = await fetch('/api/queue/' + id + '/priority', { method: 'POST' });
+    const data = await resp.json();
+    if (data.items) queueData = data.items;
+    else await loadQueue();
+    renderAll();
+    showToast('우선순위 올림');
+  } catch(e) {
+    showToast('우선순위 변경 실패: ' + e.message);
+  }
+}
+
+// ── Category Filter ──
+function filterCat(cat) {
+  currentFilter = cat;
+  document.querySelectorAll('.cat-btn').forEach(b => b.classList.toggle('active', b.dataset.cat === cat));
+  renderTable();
+}
+
+// ── Render All ──
+function renderAll() {
+  renderStats();
+  renderTable();
+}
+
+// ── Render Stats ──
+function renderStats() {
+  const total = queueData.length;
+  const pending = queueData.filter(i => i.status === 'pending' || i.status === 'processing').length;
+  const published = queueData.filter(i => i.status === 'published').length;
+  const failed = queueData.filter(i => i.status === 'failed').length;
+  $('statTotal').textContent = total;
+  $('statPending').textContent = pending;
+  $('statPublished').textContent = published;
+  $('statFailed').textContent = failed;
+}
+
+// ── Render Table ──
+function renderTable() {
+  const filtered = currentFilter === 'all'
+    ? queueData
+    : queueData.filter(i => i.category === currentFilter);
+
+  if (filtered.length === 0) {
+    $('queueBody').innerHTML = '';
+    $('emptyState').style.display = 'block';
+    return;
+  }
+
+  $('emptyState').style.display = 'none';
+  $('queueBody').innerHTML = filtered.map(item => {
+    const st = STATUS_MAP[item.status] || STATUS_MAP.pending;
+    const catLabel = CAT_LABELS[item.category] || item.category || '-';
+    const platLabel = PLATFORM_LABELS[item.platform] || item.platform || '-';
+    const toneLabel = TONE_LABELS[item.tone] || item.tone || '-';
+    const addedDate = item.created_at ? formatDate(item.created_at) : '-';
+    const pubDate = item.published_at ? formatDate(item.published_at) : '-';
+    const title = item.title || '-';
+
+    let actions = `<button class="act-btn danger" onclick="deleteItem('${esc(item.id)}')" title="삭제">&times;</button>`;
+    if (item.status === 'pending') {
+      actions += `<button class="act-btn" onclick="priorityUp('${esc(item.id)}')" title="우선순위 올리기">&uarr;</button>`;
+    }
+    if (item.status === 'failed') {
+      actions += `<button class="act-btn" onclick="retryItem('${esc(item.id)}')" title="재시도">&#8635;</button>`;
+      actions += `<button class="act-btn" onclick="priorityUp('${esc(item.id)}')" title="우선순위 올리기">&uarr;</button>`;
+    }
+
+    return `<tr>
+      <td class="kw-col">${esc(item.keyword)}</td>
+      <td>${esc(catLabel)}</td>
+      <td>${esc(platLabel)}</td>
+      <td>${esc(toneLabel)}</td>
+      <td><span class="badge ${st.cls}">${st.label}</span></td>
+      <td class="date-col">${addedDate}</td>
+      <td class="date-col">${pubDate}</td>
+      <td class="title-col" title="${esc(title)}">${esc(title)}</td>
+      <td><div class="actions-col">${actions}</div></td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Helpers ──
+function formatDate(dateStr) {
+  try {
+    const d = new Date(dateStr);
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mi = String(d.getMinutes()).padStart(2, '0');
+    return d.getFullYear() + '-' + mm + '-' + dd + ' ' + hh + ':' + mi;
+  } catch(e) { return dateStr; }
+}
+
+function esc(s) {
+  if (s === null || s === undefined) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+let toastTimer;
+function showToast(msg) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2500);
+}
+</script>
+</body>
+</html>

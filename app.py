@@ -540,7 +540,20 @@ def index():
 
 @app.route("/blog")
 def blog_page():
-    return render_template("blog.html")
+    return render_template("dashboard.html")
+
+
+@app.route("/blog/queue")
+def queue_page():
+    return render_template("queue.html")
+
+
+@app.route("/blog/write")
+def write_page():
+    platform = request.args.get("platform", "tistory")
+    if platform not in ("tistory", "naver", "wordpress"):
+        platform = "tistory"
+    return render_template("write.html", platform=platform, current_model=_get_model())
 
 
 @app.route("/shop")
@@ -2135,6 +2148,248 @@ def publish_and_index():
     pipeline_results["success"] = True
     pipeline_results["post_url"] = post_url
     return jsonify(pipeline_results)
+
+
+# ──────────────────────────────────────────────
+# 대시보드 & 키워드 큐 API
+# ──────────────────────────────────────────────
+
+import uuid as _uuid
+from datetime import timezone as _tz
+
+_DATA_DIR = os.path.join(_APP_DIR, "data")
+_QUEUE_PATH = os.path.join(_DATA_DIR, "keyword_queue.json")
+_CONFIG_PATH = os.path.join(_DATA_DIR, "scheduler_config.json")
+_LOG_PATH = os.path.join(_DATA_DIR, "publish_log.json")
+
+
+def _load_json(path, default=None):
+    """JSON 파일 로드 (없으면 기본값 반환)."""
+    if default is None:
+        default = []
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return default
+
+
+def _save_json(path, data):
+    """JSON 파일 저장."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def _default_config():
+    return {
+        "enabled": False,
+        "min_interval_min": 30,
+        "max_interval_min": 120,
+        "start_hour": 7,
+        "end_hour": 23,
+        "last_run_at": None,
+        "next_run_at": None,
+    }
+
+
+@app.route("/api/dashboard/status")
+def api_dashboard_status():
+    """대시보드 상태 정보."""
+    import naver_playwright
+
+    queue = _load_json(_QUEUE_PATH, [])
+    config = _load_json(_CONFIG_PATH, _default_config())
+    logs = _load_json(_LOG_PATH, [])
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    today_logs = [l for l in logs if l.get("timestamp", "").startswith(today)]
+
+    return jsonify({
+        "scheduler": config,
+        "counts": {
+            "today_published": sum(1 for l in today_logs if l.get("status") == "success"),
+            "pending": sum(1 for q in queue if q.get("status") == "pending"),
+            "failed": sum(1 for q in queue if q.get("status") == "failed"),
+            "processing": sum(1 for q in queue if q.get("status") == "processing"),
+            "total": len(queue),
+        },
+        "naver": {
+            "cookie_exists": naver_playwright.cookies_exist(),
+            "blog_id": NAVER_BLOG_ID or "(미설정)",
+        },
+    })
+
+
+@app.route("/api/dashboard/scheduler", methods=["POST"])
+def api_toggle_scheduler():
+    """스케줄러 ON/OFF 토글."""
+    data = request.get_json()
+    config = _load_json(_CONFIG_PATH, _default_config())
+    if "enabled" in data:
+        config["enabled"] = bool(data["enabled"])
+    if "min_interval_min" in data:
+        config["min_interval_min"] = max(10, int(data["min_interval_min"]))
+    if "max_interval_min" in data:
+        config["max_interval_min"] = max(config["min_interval_min"], int(data["max_interval_min"]))
+    _save_json(_CONFIG_PATH, config)
+
+    # 스케줄러 모듈에 알림
+    try:
+        import scheduler as sched_mod
+        sched_mod.toggle_scheduler(config["enabled"])
+    except Exception:
+        pass
+
+    return jsonify({"success": True, "scheduler": config})
+
+
+@app.route("/api/dashboard/run-once", methods=["POST"])
+def api_run_once():
+    """즉시 1건 발행."""
+    try:
+        import scheduler as sched_mod
+        result = sched_mod.run_single()
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/dashboard/logs")
+def api_dashboard_logs():
+    """발행 로그 조회."""
+    logs = _load_json(_LOG_PATH, [])
+    limit = request.args.get("limit", 50, type=int)
+    errors_only = request.args.get("errors_only", "false") == "true"
+    if errors_only:
+        logs = [l for l in logs if l.get("status") != "success"]
+    return jsonify({"logs": logs[-limit:][::-1]})
+
+
+# ── 키워드 큐 API ──
+
+@app.route("/api/queue")
+def api_queue_list():
+    """키워드 큐 목록."""
+    queue = _load_json(_QUEUE_PATH, [])
+    return jsonify({"queue": queue})
+
+
+@app.route("/api/queue", methods=["POST"])
+def api_queue_add():
+    """키워드 추가."""
+    data = request.get_json()
+    keyword = data.get("keyword", "").strip()
+    if not keyword:
+        return jsonify({"error": "키워드를 입력해주세요."}), 400
+
+    queue = _load_json(_QUEUE_PATH, [])
+    entry = {
+        "id": str(_uuid.uuid4())[:8],
+        "keyword": keyword,
+        "category": data.get("category", "it"),
+        "platform": data.get("platform", "naver"),
+        "tone": data.get("tone", "informative"),
+        "status": "pending",
+        "added_at": datetime.now().isoformat(),
+        "published_at": None,
+        "error": None,
+        "article_title": None,
+        "post_url": None,
+    }
+    queue.append(entry)
+    _save_json(_QUEUE_PATH, queue)
+    return jsonify({"success": True, "entry": entry})
+
+
+@app.route("/api/queue/bulk", methods=["POST"])
+def api_queue_bulk_add():
+    """키워드 일괄 추가."""
+    data = request.get_json()
+    keywords_text = data.get("keywords", "")
+    category = data.get("category", "it")
+    platform = data.get("platform", "naver")
+    tone = data.get("tone", "informative")
+
+    keywords = [k.strip() for k in keywords_text.split("\n") if k.strip()]
+    if not keywords:
+        return jsonify({"error": "키워드를 입력해주세요."}), 400
+
+    queue = _load_json(_QUEUE_PATH, [])
+    added = []
+    for kw in keywords:
+        entry = {
+            "id": str(_uuid.uuid4())[:8],
+            "keyword": kw,
+            "category": category,
+            "platform": platform,
+            "tone": tone,
+            "status": "pending",
+            "added_at": datetime.now().isoformat(),
+            "published_at": None,
+            "error": None,
+            "article_title": None,
+            "post_url": None,
+        }
+        queue.append(entry)
+        added.append(entry)
+    _save_json(_QUEUE_PATH, queue)
+    return jsonify({"success": True, "added": len(added)})
+
+
+@app.route("/api/queue/<entry_id>", methods=["DELETE"])
+def api_queue_delete(entry_id):
+    """키워드 삭제."""
+    queue = _load_json(_QUEUE_PATH, [])
+    queue = [q for q in queue if q["id"] != entry_id]
+    _save_json(_QUEUE_PATH, queue)
+    return jsonify({"success": True})
+
+
+@app.route("/api/queue/<entry_id>/retry", methods=["POST"])
+def api_queue_retry(entry_id):
+    """실패 키워드 재시도."""
+    queue = _load_json(_QUEUE_PATH, [])
+    for q in queue:
+        if q["id"] == entry_id:
+            q["status"] = "pending"
+            q["error"] = None
+            break
+    _save_json(_QUEUE_PATH, queue)
+    return jsonify({"success": True})
+
+
+@app.route("/api/queue/<entry_id>/priority", methods=["POST"])
+def api_queue_priority(entry_id):
+    """키워드 우선순위 올리기 (맨 앞으로)."""
+    queue = _load_json(_QUEUE_PATH, [])
+    target = None
+    rest = []
+    for q in queue:
+        if q["id"] == entry_id:
+            target = q
+        else:
+            rest.append(q)
+    if target:
+        queue = [target] + rest
+        _save_json(_QUEUE_PATH, queue)
+    return jsonify({"success": True})
+
+
+# ──────────────────────────────────────────────
+# 스케줄러 초기화
+# ──────────────────────────────────────────────
+
+def _init_scheduler():
+    """앱 시작 시 스케줄러 초기화 (Gunicorn worker 중 하나만 실행)."""
+    try:
+        import scheduler as sched_mod
+        sched_mod.init_scheduler(app)
+    except Exception as e:
+        print(f"[Scheduler] 초기화 실패: {e}")
+
+# Gunicorn에서는 worker가 fork된 후 실행
+_init_scheduler()
 
 
 if __name__ == "__main__":

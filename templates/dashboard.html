@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AutoBlog — 대시보드</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  min-height: 100vh;
+  background: #F5F1EB;
+  font-family: 'Noto Sans KR', sans-serif;
+  color: #141210;
+}
+body::after {
+  content: '';
+  position: fixed; inset: 0; pointer-events: none; z-index: 999;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23g)' opacity='0.025'/%3E%3C/svg%3E");
+}
+
+/* TOPBAR */
+.topbar {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 0 44px; height: 56px;
+  border-bottom: 1px solid rgba(20,18,16,0.09);
+  animation: fadeDown 0.5s ease both;
+}
+.brand { display: flex; align-items: baseline; gap: 9px; text-decoration: none; color: inherit; }
+.brand-name { font-family: 'Bebas Neue', cursive; font-size: 22px; letter-spacing: 0.14em; }
+.brand-ver {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase;
+  color: #9B958E; background: rgba(20,18,16,0.07); padding: 2px 7px; border-radius: 3px;
+}
+.topbar-right { display: flex; align-items: center; gap: 24px; }
+.topbar-link {
+  font-size: 10px; font-weight: 500; letter-spacing: 0.15em; text-transform: uppercase;
+  color: #9B958E; text-decoration: none; transition: color 0.2s;
+}
+.topbar-link:hover { color: #141210; }
+.topbar-link.active { color: #141210; font-weight: 700; }
+.topbar-cta {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.15em; text-transform: uppercase;
+  color: #E8470A; text-decoration: none;
+}
+
+/* LAYOUT */
+.container {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 36px 24px 80px;
+  animation: riseUp 0.65s cubic-bezier(0.22,1,0.36,1) both;
+}
+
+.page-title {
+  font-family: 'Bebas Neue', cursive;
+  font-size: 36px;
+  letter-spacing: 0.06em;
+  margin-bottom: 8px;
+}
+.page-sub {
+  font-size: 13px;
+  color: #9B958E;
+  margin-bottom: 32px;
+}
+
+/* STATUS CARDS */
+.status-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-bottom: 28px;
+}
+.stat-card {
+  background: #fff;
+  border: 1px solid rgba(20,18,16,0.08);
+  border-radius: 12px;
+  padding: 24px 24px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: transform 0.25s cubic-bezier(0.22,1,0.36,1), box-shadow 0.25s;
+}
+.stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 28px rgba(20,18,16,0.06);
+}
+.stat-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #9B958E;
+}
+.stat-value {
+  font-family: 'Bebas Neue', cursive;
+  font-size: 48px;
+  letter-spacing: 0.02em;
+  line-height: 1;
+}
+.stat-value.green { color: #16A34A; }
+.stat-value.orange { color: #EA580C; }
+.stat-value.red { color: #DC2626; }
+.stat-sub {
+  font-size: 11px;
+  color: #9B958E;
+}
+
+/* SECTION CARD */
+.section-card {
+  background: #fff;
+  border: 1px solid rgba(20,18,16,0.08);
+  border-radius: 12px;
+  padding: 28px;
+  margin-bottom: 20px;
+}
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.section-title {
+  font-family: 'Bebas Neue', cursive;
+  font-size: 22px;
+  letter-spacing: 0.05em;
+}
+
+/* TOGGLE SWITCH */
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.toggle-wrap {
+  position: relative;
+  width: 64px;
+  height: 34px;
+}
+.toggle-wrap input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  inset: 0;
+  background: rgba(20,18,16,0.15);
+  border-radius: 34px;
+  transition: background 0.3s;
+}
+.toggle-slider::before {
+  content: '';
+  position: absolute;
+  height: 26px;
+  width: 26px;
+  left: 4px;
+  bottom: 4px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform 0.3s;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+}
+.toggle-wrap input:checked + .toggle-slider {
+  background: #16A34A;
+}
+.toggle-wrap input:checked + .toggle-slider::before {
+  transform: translateX(30px);
+}
+.toggle-status {
+  font-size: 14px;
+  font-weight: 500;
+}
+.toggle-status .next-time {
+  color: #16A34A;
+  font-weight: 700;
+}
+.toggle-status .off-text {
+  color: #9B958E;
+}
+.interval-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 5px 14px;
+  border-radius: 20px;
+  background: rgba(20,18,16,0.06);
+  color: #9B958E;
+}
+
+.btn-run {
+  padding: 11px 28px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  font-family: inherit;
+  letter-spacing: 0.06em;
+  background: #141210;
+  color: #fff;
+  transition: opacity 0.2s;
+  white-space: nowrap;
+}
+.btn-run:hover { opacity: 0.85; }
+.btn-run:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* PLATFORM STATUS */
+.platform-row {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.platform-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 20px;
+  background: rgba(20,18,16,0.03);
+  border-radius: 8px;
+  flex: 1;
+  min-width: 200px;
+}
+.platform-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.platform-dot.green { background: #16A34A; box-shadow: 0 0 6px rgba(22,163,74,0.4); }
+.platform-dot.red { background: #DC2626; box-shadow: 0 0 6px rgba(220,38,38,0.4); }
+.platform-name {
+  font-size: 14px;
+  font-weight: 600;
+}
+.platform-detail {
+  font-size: 11px;
+  color: #9B958E;
+}
+.platform-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 3px 10px;
+  border-radius: 4px;
+  background: rgba(37,99,235,0.1);
+  color: #2563EB;
+  margin-left: auto;
+}
+
+/* TABLE */
+.table-wrap {
+  overflow-x: auto;
+  margin: 0 -28px;
+  padding: 0 28px;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+thead th {
+  text-align: left;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #9B958E;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(20,18,16,0.08);
+  white-space: nowrap;
+}
+tbody td {
+  padding: 12px 12px;
+  border-bottom: 1px solid rgba(20,18,16,0.05);
+  vertical-align: middle;
+}
+tbody tr:hover { background: rgba(20,18,16,0.02); }
+.td-time { font-size: 12px; color: #9B958E; white-space: nowrap; }
+.td-keyword { font-weight: 600; white-space: nowrap; }
+.td-platform {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+.td-title {
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.td-link a {
+  font-size: 11px;
+  color: #2563EB;
+  text-decoration: none;
+}
+.td-link a:hover { text-decoration: underline; }
+
+/* BADGES */
+.badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 3px 10px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+.badge-success { background: rgba(22,163,74,0.1); color: #16A34A; }
+.badge-fail { background: rgba(220,38,38,0.1); color: #DC2626; }
+.badge-pending { background: rgba(234,88,12,0.1); color: #EA580C; }
+
+/* ERROR LOG */
+.error-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  background: none;
+  border: none;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: #141210;
+  padding: 0;
+}
+.error-toggle .arrow {
+  display: inline-block;
+  transition: transform 0.2s;
+  font-size: 12px;
+}
+.error-toggle .arrow.open { transform: rotate(90deg); }
+.error-list {
+  display: none;
+  margin-top: 16px;
+}
+.error-list.open { display: block; }
+.error-item {
+  padding: 12px 16px;
+  background: rgba(220,38,38,0.04);
+  border-left: 3px solid #DC2626;
+  border-radius: 0 6px 6px 0;
+  margin-bottom: 8px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.error-item .error-time {
+  font-size: 11px;
+  font-weight: 700;
+  color: #DC2626;
+  margin-bottom: 4px;
+}
+.error-item .error-msg {
+  color: #555;
+  word-break: break-all;
+}
+.error-empty {
+  font-size: 13px;
+  color: #9B958E;
+  padding: 12px 0;
+}
+
+/* REFRESH INDICATOR */
+.refresh-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #16A34A;
+  margin-right: 6px;
+  animation: pulse 2s infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* ANIMATIONS */
+@keyframes riseUp { from { opacity: 0; transform: translateY(32px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes fadeDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+
+/* RESPONSIVE */
+@media (max-width: 700px) {
+  .topbar { padding: 0 20px; }
+  .topbar-link:not(.active) { display: none; }
+  .status-cards { grid-template-columns: 1fr; }
+  .container { padding: 24px 16px 60px; }
+  .section-card { padding: 20px; }
+  .platform-row { flex-direction: column; }
+  .toggle-row { flex-direction: column; align-items: flex-start; }
+  .td-title { max-width: 160px; }
+}
+</style>
+</head>
+<body>
+
+<!-- TOPBAR -->
+<header class="topbar">
+  <a class="brand" href="/">
+    <span class="brand-name">AutoBlog</span>
+    <span class="brand-ver">v2.0</span>
+  </a>
+  <nav class="topbar-right">
+    <a class="topbar-link active" href="/blog">대시보드</a>
+    <a class="topbar-link" href="/blog/queue">키워드 큐</a>
+    <a class="topbar-link" href="/blog/write">수동 글쓰기</a>
+    <a class="topbar-link" href="/settings">설정</a>
+    <a class="topbar-cta" href="/logout">로그아웃</a>
+  </nav>
+</header>
+
+<div class="container">
+
+  <h1 class="page-title">Dashboard</h1>
+  <p class="page-sub"><span class="refresh-dot"></span>실시간 발행 현황 &middot; 30초마다 자동 갱신</p>
+
+  <!-- STATUS CARDS -->
+  <div class="status-cards">
+    <div class="stat-card">
+      <span class="stat-label">오늘 발행</span>
+      <span class="stat-value green" id="count-published">0</span>
+      <span class="stat-sub" id="sub-published">오늘 발행된 글</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">대기 중</span>
+      <span class="stat-value orange" id="count-pending">0</span>
+      <span class="stat-sub" id="sub-pending">큐에서 대기 중인 키워드</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">실패</span>
+      <span class="stat-value red" id="count-failed">0</span>
+      <span class="stat-sub" id="sub-failed">오늘 실패한 발행</span>
+    </div>
+  </div>
+
+  <!-- SCHEDULER CONTROL -->
+  <div class="section-card">
+    <div class="section-header">
+      <span class="section-title">Scheduler Control</span>
+      <button class="btn-run" id="btn-run-once" onclick="runOnce()">즉시 1건 발행</button>
+    </div>
+    <div class="toggle-row">
+      <label class="toggle-wrap">
+        <input type="checkbox" id="scheduler-toggle" onchange="toggleScheduler()">
+        <span class="toggle-slider"></span>
+      </label>
+      <span class="toggle-status" id="scheduler-status">
+        <span class="off-text">스케줄러 꺼짐</span>
+      </span>
+      <span class="interval-badge">30~120분 랜덤 간격</span>
+    </div>
+  </div>
+
+  <!-- PLATFORM STATUS -->
+  <div class="section-card">
+    <div class="section-header">
+      <span class="section-title">Platform Status</span>
+    </div>
+    <div class="platform-row">
+      <div class="platform-item">
+        <span class="platform-dot" id="naver-dot"></span>
+        <div>
+          <div class="platform-name">Naver</div>
+          <div class="platform-detail" id="naver-detail">쿠키 상태 확인 중...</div>
+        </div>
+      </div>
+      <div class="platform-item">
+        <span class="platform-dot green"></span>
+        <div>
+          <div class="platform-name">Tistory</div>
+          <div class="platform-detail">goodisak.tistory.com</div>
+        </div>
+        <span class="platform-badge">HTML 복사 전용</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- RECENT ACTIVITY -->
+  <div class="section-card">
+    <div class="section-header">
+      <span class="section-title">Recent Activity</span>
+      <span style="font-size:11px; color:#9B958E;" id="log-count">최근 0건</span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>시간</th>
+            <th>키워드</th>
+            <th>플랫폼</th>
+            <th>상태</th>
+            <th>제목</th>
+            <th>링크</th>
+          </tr>
+        </thead>
+        <tbody id="activity-body">
+          <tr><td colspan="6" style="text-align:center; color:#9B958E; padding:32px;">데이터를 불러오는 중...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ERROR LOG -->
+  <div class="section-card">
+    <button class="error-toggle" onclick="toggleErrors()">
+      <span class="arrow" id="error-arrow">&#9654;</span>
+      Error Log
+      <span style="font-size:11px; color:#9B958E; font-weight:400; margin-left:8px;" id="error-count">0건</span>
+    </button>
+    <div class="error-list" id="error-list">
+      <div class="error-empty">에러가 없습니다.</div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+let refreshTimer = null;
+
+// ---- API calls ----
+
+async function fetchStatus() {
+  try {
+    const res = await fetch('/api/dashboard/status');
+    const data = await res.json();
+
+    document.getElementById('count-published').textContent = data.published ?? 0;
+    document.getElementById('count-pending').textContent = data.pending ?? 0;
+    document.getElementById('count-failed').textContent = data.failed ?? 0;
+
+    if (data.sub_published) document.getElementById('sub-published').textContent = data.sub_published;
+    if (data.sub_pending) document.getElementById('sub-pending').textContent = data.sub_pending;
+    if (data.sub_failed) document.getElementById('sub-failed').textContent = data.sub_failed;
+
+    // Scheduler state
+    const toggle = document.getElementById('scheduler-toggle');
+    const statusEl = document.getElementById('scheduler-status');
+    toggle.checked = !!data.scheduler_on;
+
+    if (data.scheduler_on) {
+      const nextTime = data.next_run || '--:--';
+      statusEl.innerHTML = '다음 발행: <span class="next-time">' + nextTime + '</span>';
+    } else {
+      statusEl.innerHTML = '<span class="off-text">스케줄러 꺼짐</span>';
+    }
+
+    // Naver cookie
+    const naverDot = document.getElementById('naver-dot');
+    const naverDetail = document.getElementById('naver-detail');
+    if (data.naver_cookie_valid) {
+      naverDot.className = 'platform-dot green';
+      naverDetail.textContent = data.naver_blog_id || '쿠키 유효';
+    } else {
+      naverDot.className = 'platform-dot red';
+      naverDetail.textContent = '쿠키 만료 — 재로그인 필요';
+    }
+  } catch (e) {
+    console.error('Failed to fetch status:', e);
+  }
+}
+
+async function fetchLogs() {
+  try {
+    const res = await fetch('/api/dashboard/logs');
+    const data = await res.json();
+
+    // Activity table
+    const tbody = document.getElementById('activity-body');
+    const logs = data.logs || [];
+    document.getElementById('log-count').textContent = '최근 ' + logs.length + '건';
+
+    if (logs.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:#9B958E; padding:32px;">발행 기록이 없습니다.</td></tr>';
+    } else {
+      tbody.innerHTML = logs.map(function(log) {
+        let badgeClass = 'badge-pending';
+        let badgeText = '처리중';
+        if (log.status === 'success') { badgeClass = 'badge-success'; badgeText = '성공'; }
+        else if (log.status === 'fail') { badgeClass = 'badge-fail'; badgeText = '실패'; }
+
+        const linkCell = log.url
+          ? '<a href="' + log.url + '" target="_blank" rel="noopener">보기</a>'
+          : '-';
+
+        return '<tr>'
+          + '<td class="td-time">' + (log.time || '-') + '</td>'
+          + '<td class="td-keyword">' + (log.keyword || '-') + '</td>'
+          + '<td class="td-platform">' + (log.platform || '-') + '</td>'
+          + '<td><span class="badge ' + badgeClass + '">' + badgeText + '</span></td>'
+          + '<td class="td-title" title="' + (log.title || '') + '">' + (log.title || '-') + '</td>'
+          + '<td class="td-link">' + linkCell + '</td>'
+          + '</tr>';
+      }).join('');
+    }
+
+    // Error log
+    const errors = data.errors || [];
+    const errorList = document.getElementById('error-list');
+    document.getElementById('error-count').textContent = errors.length + '건';
+
+    if (errors.length === 0) {
+      errorList.innerHTML = '<div class="error-empty">에러가 없습니다.</div>';
+    } else {
+      errorList.innerHTML = errors.map(function(err) {
+        return '<div class="error-item">'
+          + '<div class="error-time">' + (err.time || '-') + '</div>'
+          + '<div class="error-msg">' + (err.message || err.msg || '-') + '</div>'
+          + '</div>';
+      }).join('');
+    }
+  } catch (e) {
+    console.error('Failed to fetch logs:', e);
+  }
+}
+
+async function toggleScheduler() {
+  const toggle = document.getElementById('scheduler-toggle');
+  const btn = document.getElementById('btn-run-once');
+  try {
+    const res = await fetch('/api/dashboard/scheduler', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: toggle.checked })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      alert('스케줄러 변경 실패: ' + (data.error || '알 수 없는 오류'));
+      toggle.checked = !toggle.checked;
+    }
+    fetchStatus();
+  } catch (e) {
+    alert('서버 연결 실패');
+    toggle.checked = !toggle.checked;
+  }
+}
+
+async function runOnce() {
+  const btn = document.getElementById('btn-run-once');
+  btn.disabled = true;
+  btn.textContent = '발행 중...';
+  try {
+    const res = await fetch('/api/dashboard/run-once', { method: 'POST' });
+    const data = await res.json();
+    if (res.ok) {
+      btn.textContent = '발행 완료!';
+      setTimeout(function() {
+        btn.textContent = '즉시 1건 발행';
+        btn.disabled = false;
+      }, 2000);
+      fetchStatus();
+      fetchLogs();
+    } else {
+      alert('발행 실패: ' + (data.error || '알 수 없는 오류'));
+      btn.textContent = '즉시 1건 발행';
+      btn.disabled = false;
+    }
+  } catch (e) {
+    alert('서버 연결 실패');
+    btn.textContent = '즉시 1건 발행';
+    btn.disabled = false;
+  }
+}
+
+function toggleErrors() {
+  const list = document.getElementById('error-list');
+  const arrow = document.getElementById('error-arrow');
+  list.classList.toggle('open');
+  arrow.classList.toggle('open');
+}
+
+// ---- Init & auto-refresh ----
+function refreshAll() {
+  fetchStatus();
+  fetchLogs();
+}
+
+refreshAll();
+refreshTimer = setInterval(refreshAll, 30000);
+</script>
+
+</body>
+</html>

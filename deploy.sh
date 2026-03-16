@@ -19,6 +19,7 @@ FILES=(
   keywords.py
   orders.py
   naver_playwright.py
+  scheduler.py
   requirements.txt
   adsense.html
   templates/index.html
@@ -27,6 +28,8 @@ FILES=(
   templates/write.html
   templates/keywords.html
   templates/orders.html
+  templates/dashboard.html
+  templates/queue.html
 )
 
 # ── 색상 ──
