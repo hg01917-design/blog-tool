@@ -507,8 +507,13 @@ def _generate_thumbnail_with_text(title: str) -> str:
         f"https://generativelanguage.googleapis.com/v1beta/"
         f"models/imagen-4.0-fast-generate-001:predict?key={api_key}"
     )
+    thumb_prefix = (
+        "Photorealistic photo only. Absolutely no text, no words, "
+        "no letters, no typography, no captions, no labels, no watermarks, "
+        "no titles anywhere in the image. "
+    )
     payload = {
-        "instances": [{"prompt": en_prompt}],
+        "instances": [{"prompt": thumb_prefix + en_prompt}],
         "parameters": {"sampleCount": 1, "aspectRatio": "1:1"},
     }
     resp = http_requests.post(url, json=payload, timeout=60)
