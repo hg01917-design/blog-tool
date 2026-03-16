@@ -36,6 +36,7 @@ _ENV_PATH = os.path.join(_APP_DIR, ".env")
 AVAILABLE_MODELS = {
     "haiku": "claude-haiku-4-5-20251001",
     "sonnet": "claude-sonnet-4-6",
+    "opus": "claude-opus-4-6",
 }
 DEFAULT_MODEL = "claude-haiku-4-5-20251001"
 
@@ -2307,6 +2308,10 @@ def api_dashboard_status():
     today = datetime.now().strftime("%Y-%m-%d")
     today_logs = [l for l in logs if l.get("timestamp", "").startswith(today)]
 
+    # Current model info
+    current_model_id = _get_model()
+    model_key = next((k for k, v in AVAILABLE_MODELS.items() if v == current_model_id), "haiku")
+
     return jsonify({
         "scheduler": config,
         "counts": {
@@ -2322,7 +2327,28 @@ def api_dashboard_status():
         },
         "tistory": {blog_id: tistory_pw.cookies_exist(blog_id) for blog_id in TISTORY_BLOGS},
         "accounts": _load_accounts(),
+        "model": {
+            "current": current_model_id,
+            "key": model_key,
+        },
     })
+
+
+@app.route("/api/model", methods=["GET", "POST"])
+def api_model():
+    """AI 모델 조회/변경."""
+    if request.method == "GET":
+        current = _get_model()
+        key = next((k for k, v in AVAILABLE_MODELS.items() if v == current), "haiku")
+        return jsonify({"model": current, "key": key, "available": AVAILABLE_MODELS})
+
+    data = request.get_json()
+    model_key = data.get("model", "")
+    if model_key not in AVAILABLE_MODELS:
+        return jsonify({"error": f"지원하지 않는 모델: {model_key}"}), 400
+
+    _save_env_value("AI_MODEL", AVAILABLE_MODELS[model_key])
+    return jsonify({"ok": True, "model": AVAILABLE_MODELS[model_key], "key": model_key})
 
 
 @app.route("/api/dashboard/scheduler", methods=["POST"])
