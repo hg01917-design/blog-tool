@@ -21,6 +21,7 @@ FILES=(
   naver_playwright.py
   tistory_playwright.py
   scheduler.py
+  login_helper.py
   requirements.txt
   adsense.html
   templates/index.html
@@ -84,6 +85,7 @@ ssh $REMOTE "cd ~/${REMOTE_DIR} && \
   python3 -m playwright install chromium 2>&1 | tail -2 && \
   kill \$(cat gunicorn.pid 2>/dev/null) 2>/dev/null || true && \
   sleep 1 && \
+  export LD_LIBRARY_PATH=\$HOME/local-libs/usr/lib/x86_64-linux-gnu:\$LD_LIBRARY_PATH && \
   ~/.local/bin/gunicorn \
     --bind 127.0.0.1:5000 \
     --workers 2 \
