@@ -321,7 +321,7 @@ def publish_to_naver(title: str, body_html: str, tags: list[str]) -> dict:
                         logger.warning(f"이미지{idx+1} 생성 실패: {e}")
                         steps.append({"step": f"이미지{idx+1}", "status": "failed", "error": str(e)})
 
-                # 7-3) 본문 텍스트 입력
+                # 7-3) 본문 텍스트 입력 (문단 단위 타이핑)
                 if body_text:
                     # 이미지 업로드 후 마지막 텍스트 영역 클릭
                     body_ps = page.query_selector_all(".se-component.se-text .se-text-paragraph")
@@ -329,10 +329,19 @@ def publish_to_naver(title: str, body_html: str, tags: list[str]) -> dict:
                         body_ps[-1].click()
                     time.sleep(0.3)
 
-                    lines = [l for l in body_text.split('\n') if l.strip()]
-                    for i, line in enumerate(lines):
-                        page.keyboard.type(line.strip(), delay=10)
-                        if i < len(lines) - 1:
+                    # 빈 줄 기준으로 문단 분리
+                    paragraphs = re.split(r'\n\s*\n', body_text)
+                    for pi, para in enumerate(paragraphs):
+                        lines = [l for l in para.split('\n') if l.strip()]
+                        for li, line in enumerate(lines):
+                            page.keyboard.type(line.strip(), delay=10)
+                            if li < len(lines) - 1:
+                                page.keyboard.press("Enter")
+                                time.sleep(0.05)
+                        # 문단 사이 Enter 두 번 (마지막 문단 제외)
+                        if pi < len(paragraphs) - 1:
+                            page.keyboard.press("Enter")
+                            time.sleep(0.05)
                             page.keyboard.press("Enter")
                             time.sleep(0.05)
                     page.keyboard.press("Enter")
@@ -564,12 +573,40 @@ def _generate_thumbnail_with_text(title: str) -> str:
 
 
 def _parse_sections(body_html: str) -> list:
-    """HTML 본문을 소제목 기준으로 섹션 분할합니다.
+    """본문을 소제목 기준으로 섹션 분할합니다.
+
+    ##H2:소제목## 마크업과 HTML <h2>/<h3> 태그 모두 지원.
+    ##AD##, ##IMG:설명## 태그는 제거합니다.
 
     Returns: [{"heading": "소제목", "body": "본문텍스트"}, ...]
     """
-    # h2, h3 태그로 섹션 분할
-    parts = re.split(r'(<h[23][^>]*>.*?</h[23]>)', body_html, flags=re.DOTALL)
+    # ##AD## 태그 제거 (빈 줄로 대체)
+    text = re.sub(r'##AD##', '', body_html)
+    # ##IMG:설명## 태그 제거
+    text = re.sub(r'##IMG:[^#]*##', '', text)
+
+    # ##H2:소제목## 형식이 있으면 마크업 기반 파싱
+    if '##H2:' in text or '##' in text:
+        # ##H2:소제목## 또는 ##소제목## 패턴으로 분할
+        parts = re.split(r'(?:##H2:|##)([^#]+)##', text)
+
+        sections = []
+        # parts[0]은 첫 소제목 앞 텍스트 (도입부)
+        intro = parts[0].strip()
+        if intro:
+            sections.append({"heading": "", "body": intro})
+
+        # 이후는 (소제목, 본문) 쌍
+        for i in range(1, len(parts), 2):
+            heading = parts[i].strip() if i < len(parts) else ""
+            body = parts[i + 1].strip() if i + 1 < len(parts) else ""
+            if heading or body:
+                sections.append({"heading": heading, "body": body})
+
+        return sections if sections else [{"heading": "", "body": text.strip()}]
+
+    # HTML h2/h3 태그 기반 파싱 (기존 방식)
+    parts = re.split(r'(<h[23][^>]*>.*?</h[23]>)', text, flags=re.DOTALL)
 
     sections = []
     current_heading = ""
@@ -580,7 +617,6 @@ def _parse_sections(body_html: str) -> list:
         if not part:
             continue
         if re.match(r'<h[23]', part):
-            # 이전 섹션 저장
             if current_heading or current_body:
                 sections.append({"heading": current_heading, "body": current_body.strip()})
             current_heading = re.sub(r'<[^>]+>', '', part).strip()
@@ -588,7 +624,6 @@ def _parse_sections(body_html: str) -> list:
         else:
             current_body += part
 
-    # 마지막 섹션
     if current_heading or current_body:
         sections.append({"heading": current_heading, "body": current_body.strip()})
 
@@ -596,10 +631,17 @@ def _parse_sections(body_html: str) -> list:
 
 
 def _html_to_plain(html: str) -> str:
-    """HTML을 줄바꿈 포함 평문으로 변환."""
-    text = re.sub(r'<br\s*/?>', '\n', html)
+    """HTML/마크업을 줄바꿈 포함 평문으로 변환."""
+    text = html
+    # ##AD##, ##IMG## 태그 제거
+    text = re.sub(r'##AD##', '', text)
+    text = re.sub(r'##IMG:[^#]*##', '', text)
+    # HTML 태그 처리
+    text = re.sub(r'<br\s*/?>', '\n', text)
     text = re.sub(r'</(?:p|div|h[1-6]|li|tr)>', '\n', text)
     text = re.sub(r'<[^>]+>', '', text)
+    # 연속 빈 줄 정리
+    text = re.sub(r'\n{3,}', '\n\n', text)
     return text.strip()
 
 
