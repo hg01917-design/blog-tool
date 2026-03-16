@@ -8,6 +8,7 @@
 import json
 import os
 import time
+import random
 import logging
 
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
@@ -205,14 +206,17 @@ def publish_to_tistory(blog_id: str, title: str, body_html: str, tags: list[str]
             # 5) HTML 모드로 전환
             _switch_to_html_mode(page)
             steps.append({"step": "HTML 모드 전환", "status": "success"})
+            time.sleep(random.uniform(1.0, 3.0))
 
             # 6) 제목 입력
             _type_title(page, title)
             steps.append({"step": "제목 입력", "status": "success"})
+            time.sleep(random.uniform(1.0, 3.0))
 
             # 7) 본문 HTML 입력
             _type_body_html(page, body_html)
             steps.append({"step": "본문 입력", "status": "success"})
+            time.sleep(random.uniform(1.0, 3.0))
 
             # 8) 태그 입력
             if tags:
@@ -222,6 +226,8 @@ def publish_to_tistory(blog_id: str, title: str, body_html: str, tags: list[str]
                 except Exception as e:
                     logger.warning(f"태그 입력 실패: {e}")
                     steps.append({"step": "태그 입력", "status": "failed", "error": str(e)})
+
+            time.sleep(random.uniform(1.0, 3.0))
 
             # 9) 임시저장
             _click_draft_save(page)
@@ -346,9 +352,9 @@ def _type_title(page, title: str):
             el = page.query_selector(sel)
             if el and el.is_visible():
                 el.click()
-                time.sleep(0.3)
-                el.fill(title)
-                time.sleep(0.3)
+                time.sleep(random.uniform(1.0, 3.0))
+                el.type(title, delay=random.randint(40, 120))
+                time.sleep(random.uniform(1.0, 3.0))
                 logger.info(f"제목 입력 성공: {sel}")
                 return
         except Exception:
@@ -412,8 +418,8 @@ def _type_body_html(page, body_html: str):
         try:
             el = page.query_selector(sel)
             if el and el.is_visible():
-                el.fill(body_html)
-                time.sleep(0.5)
+                el.type(body_html, delay=random.randint(40, 120))
+                time.sleep(random.uniform(1.0, 3.0))
                 logger.info(f"본문 입력 성공: {sel}")
                 return
         except Exception:
@@ -505,9 +511,9 @@ def _type_tags(page, tags: list[str]):
 
     for tag in tags:
         tag_input.fill("")
-        tag_input.type(tag.strip(), delay=20)
+        tag_input.type(tag.strip(), delay=random.randint(40, 120))
         page.keyboard.press("Enter")
-        time.sleep(0.3)
+        time.sleep(random.uniform(1.0, 3.0))
 
 
 def _click_draft_save(page):

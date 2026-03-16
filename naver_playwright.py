@@ -9,6 +9,7 @@ import json
 import os
 import re
 import time
+import random
 import base64
 import logging
 import tempfile
@@ -214,12 +215,13 @@ def publish_to_naver(title: str, body_html: str, tags: list[str]) -> dict:
             page.wait_for_selector(title_sel, timeout=10000)
             page.click(title_sel)
             time.sleep(0.5)
-            page.keyboard.type(title, delay=30)
+            page.keyboard.type(title, delay=random.randint(40, 120))
             steps.append({"step": "제목 입력", "status": "success"})
+            time.sleep(random.uniform(1.0, 3.0))
 
             # ── 5) 본문 영역으로 이동 ──
             page.keyboard.press("Tab")
-            time.sleep(0.5)
+            time.sleep(random.uniform(1.0, 3.0))
 
             # ── 6) 대표 이미지 생성 + 업로드 + 대표 지정 ──
             try:
@@ -279,9 +281,9 @@ def publish_to_naver(title: str, body_html: str, tags: list[str]) -> dict:
                             section_title_btn.click()
                             time.sleep(0.3)
 
-                    page.keyboard.type(heading, delay=15)
+                    page.keyboard.type(heading, delay=random.randint(40, 120))
                     page.keyboard.press("Enter")
-                    time.sleep(0.3)
+                    time.sleep(random.uniform(1.0, 3.0))
 
                     # 서식을 본문으로 복귀
                     fmt_btn = page.query_selector('.se-text-format-toolbar-button')
@@ -334,7 +336,7 @@ def publish_to_naver(title: str, body_html: str, tags: list[str]) -> dict:
                     for pi, para in enumerate(paragraphs):
                         lines = [l for l in para.split('\n') if l.strip()]
                         for li, line in enumerate(lines):
-                            page.keyboard.type(line.strip(), delay=10)
+                            page.keyboard.type(line.strip(), delay=random.randint(40, 120))
                             if li < len(lines) - 1:
                                 page.keyboard.press("Enter")
                                 time.sleep(0.05)
@@ -345,9 +347,11 @@ def publish_to_naver(title: str, body_html: str, tags: list[str]) -> dict:
                             page.keyboard.press("Enter")
                             time.sleep(0.05)
                     page.keyboard.press("Enter")
-                    time.sleep(0.3)
+                    time.sleep(random.uniform(1.0, 3.0))
 
             steps.append({"step": "본문 입력", "status": "success", "sections": len(sections)})
+
+            time.sleep(random.uniform(1.0, 3.0))
 
             # ── 8) 발행 설정 열기 → 태그 입력 ──
             _dismiss_overlays(page)
@@ -369,9 +373,9 @@ def publish_to_naver(title: str, body_html: str, tags: list[str]) -> dict:
                         time.sleep(0.3)
                         for tag in tag_list:
                             tag_input.fill("")
-                            tag_input.type(tag.strip(), delay=20)
+                            tag_input.type(tag.strip(), delay=random.randint(40, 120))
                             page.keyboard.press("Enter")
-                            time.sleep(0.3)
+                            time.sleep(random.uniform(1.0, 3.0))
                         steps.append({"step": "태그 입력", "status": "success", "count": len(tag_list)})
                 except Exception as e:
                     steps.append({"step": "태그 입력", "status": "failed", "error": str(e)})
