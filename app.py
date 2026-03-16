@@ -2738,6 +2738,52 @@ def api_accounts_delete(entry_id):
     return jsonify({"success": True})
 
 
+@app.route("/api/accounts/<entry_id>/cookie", methods=["POST"])
+def api_accounts_cookie_upload(entry_id):
+    """계정별 쿠키 파일 업로드."""
+    # 계정 존재 확인 + 플랫폼 찾기
+    accounts = _load_accounts()
+    target_platform = None
+    for platform, accts in accounts.items():
+        for a in accts:
+            if a["id"] == entry_id:
+                target_platform = platform
+                break
+
+    if not target_platform:
+        return jsonify({"error": "계정을 찾을 수 없습니다."}), 404
+
+    # JSON 파일 업로드 처리
+    if request.content_type and "multipart" in request.content_type:
+        f = request.files.get("file")
+        if not f:
+            return jsonify({"error": "파일이 필요합니다."}), 400
+        try:
+            cookies = json.load(f)
+        except json.JSONDecodeError:
+            return jsonify({"error": "유효한 JSON 파일이 아닙니다."}), 400
+    else:
+        data = request.get_json()
+        cookies = data.get("cookies", [])
+
+    if not isinstance(cookies, list) or len(cookies) == 0:
+        return jsonify({"error": "쿠키 배열이 비어 있습니다."}), 400
+
+    # 쿠키 저장 (기존 경로 호환)
+    if target_platform == "naver":
+        cookie_path = os.path.join(_DATA_DIR, "naver_cookies.json")
+    elif target_platform == "tistory":
+        cookie_path = os.path.join(_DATA_DIR, f"tistory_cookies_{entry_id}.json")
+    else:
+        cookie_path = os.path.join(_DATA_DIR, f"{target_platform}_cookies_{entry_id}.json")
+
+    os.makedirs(os.path.dirname(cookie_path), exist_ok=True)
+    with open(cookie_path, "w", encoding="utf-8") as fp:
+        json.dump(cookies, fp, ensure_ascii=False, indent=2)
+
+    return jsonify({"success": True, "cookie_count": len(cookies), "path": os.path.basename(cookie_path)})
+
+
 @app.route("/api/accounts/<entry_id>/publish", methods=["POST"])
 def api_accounts_publish(entry_id):
     """계정에 즉시 발행 (큐의 첫 번째 pending 키워드 사용)."""

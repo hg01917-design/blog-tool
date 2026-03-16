@@ -281,7 +281,8 @@ body::after {
 .acct-name { font-size: 13px; font-weight: 600; }
 .acct-url  { font-size: 11px; color: #9B958E; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .acct-btn {
-  padding: 6px 14px;
+  padding: 10px 14px;
+  min-height: 44px;
   border: none;
   border-radius: 6px;
   font-size: 11px;
@@ -291,15 +292,17 @@ body::after {
   transition: opacity 0.15s, transform 0.15s;
   flex-shrink: 0;
 }
+.acct-btn.cookie { background: rgba(22,163,74,0.1); color: #16A34A; }
 .acct-btn:hover { opacity: 0.85; transform: translateY(-1px); }
 .acct-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
 .acct-btn.publish { background: #141210; color: #fff; }
-.acct-btn.delete  { background: rgba(220,38,38,0.1); color: #DC2626; padding: 6px 10px; }
+.acct-btn.delete  { background: rgba(220,38,38,0.1); color: #DC2626; }
 .acct-add {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 16px;
+  padding: 12px 16px;
+  min-height: 44px;
   background: none;
   border: 1px dashed rgba(20,18,16,0.15);
   border-radius: 8px;
@@ -320,17 +323,19 @@ body::after {
 .acct-add-form.open { display: flex; }
 .acct-add-form input {
   flex: 1;
-  padding: 8px 12px;
+  padding: 10px 12px;
+  min-height: 44px;
   border: 1px solid rgba(20,18,16,0.12);
   border-radius: 6px;
-  font-size: 12px;
+  font-size: 14px;
 }
 .acct-add-form input:focus { outline: none; border-color: #141210; }
 .acct-add-form button {
-  padding: 8px 16px;
+  padding: 10px 16px;
+  min-height: 44px;
   border: none;
   border-radius: 6px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   background: #141210;
   color: #fff;
@@ -845,6 +850,7 @@ function renderAccounts() {
       + '  <div class="acct-name">' + (acct.name || acct.url) + '</div>'
       + '  <div class="acct-url">' + acct.url + (statusText ? ' · ' + statusText : '') + '</div>'
       + '</div>'
+      + '<button class="acct-btn cookie" onclick="uploadCookie(\'' + acct.id + '\')" title="쿠키 업로드">쿠키</button>'
       + '<button class="acct-btn delete" onclick="deleteAccount(\'' + platform + '\',\'' + acct.id + '\')" title="삭제">&times;</button>'
       + '<button class="acct-btn publish" onclick="publishAccount(\'' + platform + '\',\'' + acct.id + '\',this)">발행</button>'
       + '</div>';
@@ -878,6 +884,32 @@ async function addAccount() {
       alert(d.error || '추가 실패');
     }
   } catch (e) { alert('서버 연결 실패'); }
+}
+
+function uploadCookie(accountId) {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.json';
+  input.onchange = async function() {
+    const file = input.files[0];
+    if (!file) return;
+    const form = new FormData();
+    form.append('file', file);
+    try {
+      const res = await fetch('/api/accounts/' + accountId + '/cookie', {
+        method: 'POST',
+        body: form
+      });
+      const d = await res.json();
+      if (res.ok) {
+        alert('쿠키 ' + d.cookie_count + '개 등록 완료');
+        fetchStatus();
+      } else {
+        alert(d.error || '업로드 실패');
+      }
+    } catch (e) { alert('서버 연결 실패'); }
+  };
+  input.click();
 }
 
 async function deleteAccount(platform, id) {
