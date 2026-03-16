@@ -46,7 +46,11 @@ def main():
     print()
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False)
+        browser = p.chromium.launch(
+            headless=False,
+            channel="",          # 시스템 Chrome 사용 방지, Playwright 내장 Chromium 강제
+            args=["--disable-extensions", "--no-first-run"],
+        )
         context = browser.new_context(
             viewport={"width": 1280, "height": 900},
             user_agent=(
@@ -54,6 +58,7 @@ def main():
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
                 "Chrome/131.0.0.0 Safari/537.36"
             ),
+            no_viewport=False,
         )
         page = context.new_page()
 
