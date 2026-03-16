@@ -81,10 +81,10 @@ fi
 echo ""
 echo -e "${Y}[4/5] 의존성 설치 + Gunicorn 재시작...${N}"
 ssh $REMOTE "cd ~/${REMOTE_DIR} && \
-  pip3 install -r requirements.txt -q 2>&1 | tail -3 && \
-  python3 -m playwright install chromium 2>&1 | tail -2 && \
-  kill \$(cat gunicorn.pid 2>/dev/null) 2>/dev/null || true && \
-  sleep 1 && \
+  pip3 install -r requirements.txt -q 2>&1 | tail -3; \
+  python3 -m playwright install chromium 2>&1 | tail -2; \
+  kill \$(cat gunicorn.pid 2>/dev/null) 2>/dev/null || true; \
+  sleep 1; \
   export LD_LIBRARY_PATH=\$HOME/local-libs/usr/lib/x86_64-linux-gnu:\$LD_LIBRARY_PATH && \
   ~/.local/bin/gunicorn \
     --bind 127.0.0.1:5000 \
