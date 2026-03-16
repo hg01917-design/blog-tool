@@ -2821,6 +2821,21 @@ def api_accounts_publish(entry_id):
     def _run_publish(kw_id):
         import datetime as _dt
         log_path = os.path.join(_APP_DIR, "error.log")
+
+        def _restore_pending():
+            """발행 실패 시 키워드 status를 pending으로 복구."""
+            try:
+                q = _load_json(_QUEUE_PATH, [])
+                for item in q:
+                    if item.get("id") == kw_id:
+                        item["status"] = "pending"
+                        item.pop("error", None)
+                        break
+                _save_json(_QUEUE_PATH, q)
+                print(f"[{_dt.datetime.now()}] [Publish] 키워드 복구 → pending (kw_id={kw_id})")
+            except Exception:
+                pass
+
         try:
             import scheduler as sched_mod
             result = sched_mod.run_single(kw_id)
@@ -2832,6 +2847,7 @@ def api_accounts_publish(entry_id):
                 print(err_msg)
                 with open(log_path, "a", encoding="utf-8") as f:
                     f.write(err_msg)
+                _restore_pending()
             else:
                 print(f"[{_dt.datetime.now()}] [Publish] 발행 성공 (kw_id={kw_id})")
         except Exception as e:
@@ -2846,6 +2862,7 @@ def api_accounts_publish(entry_id):
                     f.write(err_msg)
             except Exception:
                 pass
+            _restore_pending()
 
     t = threading.Thread(target=_run_publish, args=(keyword_entry["id"],), daemon=True)
     t.start()
