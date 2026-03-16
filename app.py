@@ -2248,6 +2248,40 @@ def _save_json(path, data):
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
+_ACCOUNTS_PATH = os.path.join(_DATA_DIR, "accounts.json")
+
+
+def _load_accounts():
+    """계정 목록 로드. 없으면 .env 기반 기본값 생성."""
+    accounts = _load_json(_ACCOUNTS_PATH, None)
+    if accounts is None:
+        # 초기 accounts.json 생성 (.env 기반)
+        accounts = {"naver": [], "tistory": [], "wordpress": []}
+        if NAVER_BLOG_ID:
+            accounts["naver"].append({
+                "id": NAVER_BLOG_ID,
+                "name": NAVER_BLOG_ID,
+                "url": f"https://blog.naver.com/{NAVER_BLOG_ID}",
+                "blog_id": NAVER_BLOG_ID,
+            })
+        for blog_id in TISTORY_BLOGS:
+            accounts["tistory"].append({
+                "id": blog_id,
+                "name": blog_id,
+                "url": f"https://{blog_id}.tistory.com",
+                "blog_id": blog_id,
+            })
+        if WP_URL:
+            accounts["wordpress"].append({
+                "id": "wp-main",
+                "name": WP_URL.replace("https://", "").replace("http://", ""),
+                "url": WP_URL,
+                "blog_id": "wp-main",
+            })
+        _save_json(_ACCOUNTS_PATH, accounts)
+    return accounts
+
+
 def _default_config():
     return {
         "enabled": False,
@@ -2287,6 +2321,7 @@ def api_dashboard_status():
             "blog_id": NAVER_BLOG_ID or "(미설정)",
         },
         "tistory": {blog_id: tistory_pw.cookies_exist(blog_id) for blog_id in TISTORY_BLOGS},
+        "accounts": _load_accounts(),
     })
 
 
@@ -2443,6 +2478,101 @@ def api_queue_priority(entry_id):
         queue = [target] + rest
         _save_json(_QUEUE_PATH, queue)
     return jsonify({"success": True})
+
+
+# ──────────────────────────────────────────────
+# 계정 관리 API
+# ──────────────────────────────────────────────
+
+@app.route("/api/accounts", methods=["POST"])
+def api_accounts_add():
+    """계정 추가."""
+    data = request.get_json()
+    platform = data.get("platform", "")
+    url = data.get("url", "").strip().rstrip("/")
+    if not platform or not url:
+        return jsonify({"error": "플랫폼과 URL이 필요합니다."}), 400
+
+    # URL에서 blog_id 추출
+    if platform == "tistory":
+        blog_id = url.replace("https://", "").replace("http://", "").split(".")[0]
+        if not url.endswith(".tistory.com"):
+            url = f"https://{blog_id}.tistory.com"
+    elif platform == "naver":
+        blog_id = url.replace("https://blog.naver.com/", "").replace("http://", "").split("/")[0].split(".")[0]
+        url = f"https://blog.naver.com/{blog_id}"
+    else:
+        blog_id = url.replace("https://", "").replace("http://", "").split("/")[0]
+
+    accounts = _load_accounts()
+    if platform not in accounts:
+        accounts[platform] = []
+
+    # 중복 확인
+    if any(a["id"] == blog_id for a in accounts[platform]):
+        return jsonify({"error": "이미 등록된 계정입니다."}), 400
+
+    accounts[platform].append({
+        "id": blog_id,
+        "name": blog_id,
+        "url": url,
+        "blog_id": blog_id,
+    })
+    _save_json(_ACCOUNTS_PATH, accounts)
+    return jsonify({"success": True})
+
+
+@app.route("/api/accounts/<entry_id>", methods=["DELETE"])
+def api_accounts_delete(entry_id):
+    """계정 삭제."""
+    accounts = _load_accounts()
+    for platform in accounts:
+        accounts[platform] = [a for a in accounts[platform] if a["id"] != entry_id]
+    _save_json(_ACCOUNTS_PATH, accounts)
+    return jsonify({"success": True})
+
+
+@app.route("/api/accounts/<entry_id>/publish", methods=["POST"])
+def api_accounts_publish(entry_id):
+    """계정에 즉시 발행 (큐의 첫 번째 pending 키워드 사용)."""
+    accounts = _load_accounts()
+    target = None
+    target_platform = None
+    for platform, accts in accounts.items():
+        for a in accts:
+            if a["id"] == entry_id:
+                target = a
+                target_platform = platform
+                break
+
+    if not target:
+        return jsonify({"error": "계정을 찾을 수 없습니다."}), 404
+
+    # 큐에서 해당 플랫폼의 첫 번째 pending 키워드 찾기
+    queue = _load_json(_QUEUE_PATH, [])
+    keyword_entry = None
+    for q in queue:
+        if q.get("status") == "pending" and q.get("platform") == target_platform:
+            keyword_entry = q
+            break
+
+    if not keyword_entry:
+        # 플랫폼 무관하게 아무 pending이라도
+        for q in queue:
+            if q.get("status") == "pending":
+                keyword_entry = q
+                break
+
+    if not keyword_entry:
+        return jsonify({"error": "대기 중인 키워드가 없습니다. 키워드 큐에 먼저 추가하세요."}), 400
+
+    # 스케줄러의 run_single 호출
+    try:
+        import scheduler as sched_mod
+        result = sched_mod.run_single(keyword_entry["id"])
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 # ──────────────────────────────────────────────

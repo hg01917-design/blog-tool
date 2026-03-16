@@ -208,47 +208,108 @@ body::after {
 .btn-run:hover { opacity: 0.85; }
 .btn-run:disabled { opacity: 0.4; cursor: not-allowed; }
 
-/* PLATFORM STATUS */
-.platform-row {
-  display: flex;
-  gap: 16px;
-  flex-wrap: wrap;
+/* PLATFORM STATUS — dropdown + account list */
+.plat-select {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid rgba(20,18,16,0.12);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  background: #fff;
+  color: #141210;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239B958E' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  cursor: pointer;
+  margin-bottom: 14px;
 }
-.platform-item {
+.plat-select:focus { outline: none; border-color: #141210; }
+.acct-list { display: flex; flex-direction: column; gap: 8px; }
+.acct-item {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 14px 20px;
+  padding: 12px 16px;
   background: rgba(20,18,16,0.03);
   border-radius: 8px;
-  flex: 1;
-  min-width: 200px;
+  transition: background 0.15s;
 }
-.platform-dot {
-  width: 10px;
-  height: 10px;
+.acct-item:hover { background: rgba(20,18,16,0.06); }
+.acct-dot {
+  width: 9px; height: 9px;
   border-radius: 50%;
   flex-shrink: 0;
 }
-.platform-dot.green { background: #16A34A; box-shadow: 0 0 6px rgba(22,163,74,0.4); }
-.platform-dot.red { background: #DC2626; box-shadow: 0 0 6px rgba(220,38,38,0.4); }
-.platform-name {
-  font-size: 14px;
-  font-weight: 600;
-}
-.platform-detail {
+.acct-dot.green { background: #16A34A; box-shadow: 0 0 5px rgba(22,163,74,0.35); }
+.acct-dot.red   { background: #DC2626; box-shadow: 0 0 5px rgba(220,38,38,0.35); }
+.acct-dot.gray  { background: #9B958E; }
+.acct-info { flex: 1; min-width: 0; }
+.acct-name { font-size: 13px; font-weight: 600; }
+.acct-url  { font-size: 11px; color: #9B958E; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.acct-btn {
+  padding: 6px 14px;
+  border: none;
+  border-radius: 6px;
   font-size: 11px;
-  color: #9B958E;
-}
-.platform-badge {
-  font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.08em;
-  padding: 3px 10px;
-  border-radius: 4px;
-  background: rgba(37,99,235,0.1);
-  color: #2563EB;
-  margin-left: auto;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  transition: opacity 0.15s, transform 0.15s;
+  flex-shrink: 0;
+}
+.acct-btn:hover { opacity: 0.85; transform: translateY(-1px); }
+.acct-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+.acct-btn.publish { background: #141210; color: #fff; }
+.acct-btn.delete  { background: rgba(220,38,38,0.1); color: #DC2626; padding: 6px 10px; }
+.acct-add {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: none;
+  border: 1px dashed rgba(20,18,16,0.15);
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #9B958E;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+  width: 100%;
+}
+.acct-add:hover { border-color: #141210; color: #141210; }
+.acct-add-form {
+  display: none;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 0;
+}
+.acct-add-form.open { display: flex; }
+.acct-add-form input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid rgba(20,18,16,0.12);
+  border-radius: 6px;
+  font-size: 12px;
+}
+.acct-add-form input:focus { outline: none; border-color: #141210; }
+.acct-add-form button {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  background: #141210;
+  color: #fff;
+  cursor: pointer;
+}
+.acct-empty {
+  text-align: center;
+  padding: 24px;
+  font-size: 12px;
+  color: #9B958E;
 }
 
 /* TABLE */
@@ -389,7 +450,6 @@ tbody tr:hover { background: rgba(20,18,16,0.02); }
   .status-cards { grid-template-columns: 1fr; }
   .container { padding: 24px 16px 60px; }
   .section-card { padding: 20px; }
-  .platform-row { flex-direction: column; }
   .toggle-row { flex-direction: column; align-items: flex-start; }
   .td-title { max-width: 160px; }
 }
@@ -459,28 +519,16 @@ tbody tr:hover { background: rgba(20,18,16,0.02); }
     <div class="section-header">
       <span class="section-title">Platform Status</span>
     </div>
-    <div class="platform-row">
-      <div class="platform-item">
-        <span class="platform-dot" id="naver-dot"></span>
-        <div>
-          <div class="platform-name">Naver</div>
-          <div class="platform-detail" id="naver-detail">확인 중...</div>
-        </div>
-      </div>
-      <div class="platform-item" id="tistory-goodisak">
-        <span class="platform-dot" id="tistory-goodisak-dot"></span>
-        <div>
-          <div class="platform-name">Tistory — 굳이삭</div>
-          <div class="platform-detail" id="tistory-goodisak-detail">확인 중...</div>
-        </div>
-      </div>
-      <div class="platform-item" id="tistory-nolja">
-        <span class="platform-dot" id="tistory-nolja-dot"></span>
-        <div>
-          <div class="platform-name">Tistory — 놀자</div>
-          <div class="platform-detail" id="tistory-nolja-detail">확인 중...</div>
-        </div>
-      </div>
+    <select class="plat-select" id="plat-select" onchange="renderAccounts()">
+      <option value="naver">Naver</option>
+      <option value="tistory">Tistory</option>
+      <option value="wordpress">WordPress</option>
+    </select>
+    <div class="acct-list" id="acct-list"></div>
+    <button class="acct-add" id="acct-add-btn" onclick="toggleAddForm()">+ 계정 추가</button>
+    <div class="acct-add-form" id="acct-add-form">
+      <input type="text" id="acct-add-input" placeholder="블로그 주소 (예: myblog.tistory.com)">
+      <button onclick="addAccount()">추가</button>
     </div>
   </div>
 
@@ -558,36 +606,13 @@ async function fetchStatus() {
       statusEl.innerHTML = '<span class="off-text">스케줄러 꺼짐</span>';
     }
 
-    // Naver cookie
-    const naver = data.naver || {};
-    const naverDot = document.getElementById('naver-dot');
-    const naverDetail = document.getElementById('naver-detail');
-    if (naver.cookie_exists) {
-      naverDot.className = 'platform-dot green';
-      naverDetail.textContent = naver.blog_id || '쿠키 유효';
-    } else {
-      naverDot.className = 'platform-dot red';
-      naverDetail.textContent = '쿠키 만료 — 재로그인 필요';
-    }
-
-    // Tistory cookies
-    const tistory = data.tistory || {};
-    const tistoryBlogs = {
-      'goodisak': { dot: 'tistory-goodisak-dot', detail: 'tistory-goodisak-detail', name: 'goodisak.tistory.com' },
-      'nolja-today': { dot: 'tistory-nolja-dot', detail: 'tistory-nolja-detail', name: 'nolja-today.tistory.com' },
+    // Store platform data for account rendering
+    window._platData = {
+      naver: data.naver || {},
+      tistory: data.tistory || {},
+      accounts: data.accounts || {},
     };
-    for (const [blogId, ui] of Object.entries(tistoryBlogs)) {
-      const dot = document.getElementById(ui.dot);
-      const detail = document.getElementById(ui.detail);
-      if (!dot || !detail) continue;
-      if (tistory[blogId]) {
-        dot.className = 'platform-dot green';
-        detail.textContent = ui.name;
-      } else {
-        dot.className = 'platform-dot red';
-        detail.textContent = '쿠키 없음 — 로그인 필요';
-      }
-    }
+    renderAccounts();
   } catch (e) {
     console.error('Failed to fetch status:', e);
   }
@@ -704,6 +729,106 @@ function toggleErrors() {
   const arrow = document.getElementById('error-arrow');
   list.classList.toggle('open');
   arrow.classList.toggle('open');
+}
+
+// ---- Account management ----
+function renderAccounts() {
+  const platform = document.getElementById('plat-select').value;
+  const list = document.getElementById('acct-list');
+  const d = window._platData || {};
+  const accounts = (d.accounts && d.accounts[platform]) || [];
+
+  if (accounts.length === 0) {
+    list.innerHTML = '<div class="acct-empty">등록된 계정이 없습니다.</div>';
+    return;
+  }
+
+  list.innerHTML = accounts.map(function(acct) {
+    let dotClass = 'gray';
+    let statusText = '';
+
+    if (platform === 'naver' && d.naver) {
+      dotClass = d.naver.cookie_exists ? 'green' : 'red';
+      statusText = d.naver.cookie_exists ? '쿠키 유효' : '쿠키 만료';
+    } else if (platform === 'tistory' && d.tistory) {
+      const blogId = acct.blog_id || acct.url.replace('.tistory.com','').replace('https://','');
+      dotClass = d.tistory[blogId] ? 'green' : 'red';
+      statusText = d.tistory[blogId] ? '쿠키 유효' : '쿠키 없음';
+    } else if (platform === 'wordpress') {
+      dotClass = 'green';
+      statusText = 'API 연동';
+    }
+
+    return '<div class="acct-item">'
+      + '<span class="acct-dot ' + dotClass + '"></span>'
+      + '<div class="acct-info">'
+      + '  <div class="acct-name">' + (acct.name || acct.url) + '</div>'
+      + '  <div class="acct-url">' + acct.url + (statusText ? ' · ' + statusText : '') + '</div>'
+      + '</div>'
+      + '<button class="acct-btn delete" onclick="deleteAccount(\'' + platform + '\',\'' + acct.id + '\')" title="삭제">&times;</button>'
+      + '<button class="acct-btn publish" onclick="publishAccount(\'' + platform + '\',\'' + acct.id + '\',this)">발행</button>'
+      + '</div>';
+  }).join('');
+}
+
+function toggleAddForm() {
+  const form = document.getElementById('acct-add-form');
+  form.classList.toggle('open');
+  if (form.classList.contains('open')) {
+    document.getElementById('acct-add-input').focus();
+  }
+}
+
+async function addAccount() {
+  const platform = document.getElementById('plat-select').value;
+  const url = document.getElementById('acct-add-input').value.trim();
+  if (!url) return;
+  try {
+    const res = await fetch('/api/accounts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ platform: platform, url: url })
+    });
+    if (res.ok) {
+      document.getElementById('acct-add-input').value = '';
+      document.getElementById('acct-add-form').classList.remove('open');
+      fetchStatus();
+    } else {
+      const d = await res.json();
+      alert(d.error || '추가 실패');
+    }
+  } catch (e) { alert('서버 연결 실패'); }
+}
+
+async function deleteAccount(platform, id) {
+  if (!confirm('이 계정을 삭제하시겠습니까?')) return;
+  try {
+    await fetch('/api/accounts/' + id, { method: 'DELETE' });
+    fetchStatus();
+  } catch (e) { alert('서버 연결 실패'); }
+}
+
+async function publishAccount(platform, id, btn) {
+  btn.disabled = true;
+  btn.textContent = '발행 중...';
+  try {
+    const res = await fetch('/api/accounts/' + id + '/publish', { method: 'POST' });
+    const data = await res.json();
+    if (res.ok && data.success) {
+      btn.textContent = '완료!';
+      setTimeout(function() { btn.textContent = '발행'; btn.disabled = false; }, 2000);
+      fetchStatus();
+      fetchLogs();
+    } else {
+      alert(data.error || '발행 실패');
+      btn.textContent = '발행';
+      btn.disabled = false;
+    }
+  } catch (e) {
+    alert('서버 연결 실패');
+    btn.textContent = '발행';
+    btn.disabled = false;
+  }
 }
 
 // ---- Init & auto-refresh ----
