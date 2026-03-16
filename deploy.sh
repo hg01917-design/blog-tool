@@ -19,6 +19,7 @@ FILES=(
   keywords.py
   orders.py
   naver_playwright.py
+  tistory_playwright.py
   scheduler.py
   requirements.txt
   adsense.html

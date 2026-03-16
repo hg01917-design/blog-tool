@@ -464,16 +464,22 @@ tbody tr:hover { background: rgba(20,18,16,0.02); }
         <span class="platform-dot" id="naver-dot"></span>
         <div>
           <div class="platform-name">Naver</div>
-          <div class="platform-detail" id="naver-detail">쿠키 상태 확인 중...</div>
+          <div class="platform-detail" id="naver-detail">확인 중...</div>
         </div>
       </div>
-      <div class="platform-item">
-        <span class="platform-dot green"></span>
+      <div class="platform-item" id="tistory-goodisak">
+        <span class="platform-dot" id="tistory-goodisak-dot"></span>
         <div>
-          <div class="platform-name">Tistory</div>
-          <div class="platform-detail">goodisak.tistory.com</div>
+          <div class="platform-name">Tistory — 굳이삭</div>
+          <div class="platform-detail" id="tistory-goodisak-detail">확인 중...</div>
         </div>
-        <span class="platform-badge">HTML 복사 전용</span>
+      </div>
+      <div class="platform-item" id="tistory-nolja">
+        <span class="platform-dot" id="tistory-nolja-dot"></span>
+        <div>
+          <div class="platform-name">Tistory — 놀자</div>
+          <div class="platform-detail" id="tistory-nolja-detail">확인 중...</div>
+        </div>
       </div>
     </div>
   </div>
@@ -526,36 +532,61 @@ async function fetchStatus() {
   try {
     const res = await fetch('/api/dashboard/status');
     const data = await res.json();
+    const counts = data.counts || {};
+    const sched = data.scheduler || {};
 
-    document.getElementById('count-published').textContent = data.published ?? 0;
-    document.getElementById('count-pending').textContent = data.pending ?? 0;
-    document.getElementById('count-failed').textContent = data.failed ?? 0;
+    document.getElementById('count-published').textContent = counts.today_published ?? 0;
+    document.getElementById('count-pending').textContent = counts.pending ?? 0;
+    document.getElementById('count-failed').textContent = counts.failed ?? 0;
 
-    if (data.sub_published) document.getElementById('sub-published').textContent = data.sub_published;
-    if (data.sub_pending) document.getElementById('sub-pending').textContent = data.sub_pending;
-    if (data.sub_failed) document.getElementById('sub-failed').textContent = data.sub_failed;
+    const subPub = document.getElementById('sub-published');
+    const subPen = document.getElementById('sub-pending');
+    const subFail = document.getElementById('sub-failed');
+    if (subPub) subPub.textContent = '오늘 ' + (counts.today_published ?? 0) + '건';
+    if (subPen) subPen.textContent = '총 ' + (counts.pending ?? 0) + '건 대기';
+    if (subFail) subFail.textContent = (counts.failed ?? 0) + '건 실패';
 
     // Scheduler state
     const toggle = document.getElementById('scheduler-toggle');
     const statusEl = document.getElementById('scheduler-status');
-    toggle.checked = !!data.scheduler_on;
+    toggle.checked = !!sched.enabled;
 
-    if (data.scheduler_on) {
-      const nextTime = data.next_run || '--:--';
+    if (sched.enabled) {
+      const nextTime = sched.next_run_at ? new Date(sched.next_run_at).toLocaleTimeString('ko-KR', {hour:'2-digit', minute:'2-digit'}) : '--:--';
       statusEl.innerHTML = '다음 발행: <span class="next-time">' + nextTime + '</span>';
     } else {
       statusEl.innerHTML = '<span class="off-text">스케줄러 꺼짐</span>';
     }
 
     // Naver cookie
+    const naver = data.naver || {};
     const naverDot = document.getElementById('naver-dot');
     const naverDetail = document.getElementById('naver-detail');
-    if (data.naver_cookie_valid) {
+    if (naver.cookie_exists) {
       naverDot.className = 'platform-dot green';
-      naverDetail.textContent = data.naver_blog_id || '쿠키 유효';
+      naverDetail.textContent = naver.blog_id || '쿠키 유효';
     } else {
       naverDot.className = 'platform-dot red';
       naverDetail.textContent = '쿠키 만료 — 재로그인 필요';
+    }
+
+    // Tistory cookies
+    const tistory = data.tistory || {};
+    const tistoryBlogs = {
+      'goodisak': { dot: 'tistory-goodisak-dot', detail: 'tistory-goodisak-detail', name: 'goodisak.tistory.com' },
+      'nolja-today': { dot: 'tistory-nolja-dot', detail: 'tistory-nolja-detail', name: 'nolja-today.tistory.com' },
+    };
+    for (const [blogId, ui] of Object.entries(tistoryBlogs)) {
+      const dot = document.getElementById(ui.dot);
+      const detail = document.getElementById(ui.detail);
+      if (!dot || !detail) continue;
+      if (tistory[blogId]) {
+        dot.className = 'platform-dot green';
+        detail.textContent = ui.name;
+      } else {
+        dot.className = 'platform-dot red';
+        detail.textContent = '쿠키 없음 — 로그인 필요';
+      }
     }
   } catch (e) {
     console.error('Failed to fetch status:', e);
@@ -579,14 +610,15 @@ async function fetchLogs() {
         let badgeClass = 'badge-pending';
         let badgeText = '처리중';
         if (log.status === 'success') { badgeClass = 'badge-success'; badgeText = '성공'; }
-        else if (log.status === 'fail') { badgeClass = 'badge-fail'; badgeText = '실패'; }
+        else if (log.status === 'failed') { badgeClass = 'badge-fail'; badgeText = '실패'; }
 
-        const linkCell = log.url
-          ? '<a href="' + log.url + '" target="_blank" rel="noopener">보기</a>'
+        const ts = log.timestamp ? new Date(log.timestamp).toLocaleString('ko-KR', {month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit'}) : '-';
+        const linkCell = log.post_url
+          ? '<a href="' + log.post_url + '" target="_blank" rel="noopener">보기</a>'
           : '-';
 
         return '<tr>'
-          + '<td class="td-time">' + (log.time || '-') + '</td>'
+          + '<td class="td-time">' + ts + '</td>'
           + '<td class="td-keyword">' + (log.keyword || '-') + '</td>'
           + '<td class="td-platform">' + (log.platform || '-') + '</td>'
           + '<td><span class="badge ' + badgeClass + '">' + badgeText + '</span></td>'
@@ -596,8 +628,10 @@ async function fetchLogs() {
       }).join('');
     }
 
-    // Error log
-    const errors = data.errors || [];
+    // Error log (fetch errors only)
+    const errRes = await fetch('/api/dashboard/logs?errors_only=true&limit=20');
+    const errData = await errRes.json();
+    const errors = errData.logs || [];
     const errorList = document.getElementById('error-list');
     document.getElementById('error-count').textContent = errors.length + '건';
 
@@ -605,9 +639,10 @@ async function fetchLogs() {
       errorList.innerHTML = '<div class="error-empty">에러가 없습니다.</div>';
     } else {
       errorList.innerHTML = errors.map(function(err) {
+        const ts = err.timestamp ? new Date(err.timestamp).toLocaleString('ko-KR', {month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit'}) : '-';
         return '<div class="error-item">'
-          + '<div class="error-time">' + (err.time || '-') + '</div>'
-          + '<div class="error-msg">' + (err.message || err.msg || '-') + '</div>'
+          + '<div class="error-time">' + ts + ' [' + (err.keyword || '-') + ']</div>'
+          + '<div class="error-msg">' + (err.error || '알 수 없는 오류') + '</div>'
           + '</div>';
       }).join('');
     }

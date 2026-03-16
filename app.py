@@ -226,6 +226,9 @@ WP_APP_PASSWORD = os.environ.get("WP_APP_PASSWORD", "")
 # 네이버 블로그 설정
 NAVER_BLOG_ID = os.environ.get("NAVER_BLOG_ID", "")
 
+# 티스토리 블로그 설정 (쉼표 구분)
+TISTORY_BLOGS = [b.strip() for b in os.environ.get("TISTORY_BLOGS", "goodisak").split(",") if b.strip()]
+
 # IndexNow 설정
 INDEXNOW_KEY = os.environ.get("INDEXNOW_KEY", "")
 if not INDEXNOW_KEY:
@@ -1959,6 +1962,70 @@ def naver_cookie_status():
 
 
 # ──────────────────────────────────────────────
+# 티스토리 블로그 자동 발행 (Playwright)
+# ──────────────────────────────────────────────
+
+@app.route("/publish-tistory", methods=["POST"])
+def publish_tistory():
+    """티스토리 블로그 Playwright 자동 발행."""
+    import tistory_playwright
+
+    data = request.get_json()
+    blog_id = data.get("blog_id", "")
+    title = data.get("title", "")
+    body = data.get("body", "")
+    tags_str = data.get("tags", "")
+
+    if not blog_id:
+        return jsonify({"error": "blog_id가 필요합니다."}), 400
+    if blog_id not in TISTORY_BLOGS:
+        return jsonify({"error": f"허용되지 않은 블로그: {blog_id}"}), 400
+    if not title or not body:
+        return jsonify({"error": "제목과 본문이 필요합니다."}), 400
+
+    if not tistory_playwright.cookies_exist(blog_id):
+        return jsonify({"error": f"{blog_id} 쿠키가 없습니다. 먼저 로그인해주세요."}), 400
+
+    tag_list = [t.strip() for t in tags_str.split(",") if t.strip()][:10]
+
+    result = tistory_playwright.publish_to_tistory(blog_id, title, body, tag_list)
+
+    if result.get("success"):
+        return jsonify(result)
+    else:
+        return jsonify(result), 500
+
+
+@app.route("/tistory-cookie-status")
+def tistory_cookie_status():
+    """티스토리 블로그별 쿠키 상태 확인."""
+    import tistory_playwright
+    blogs = {}
+    for blog_id in TISTORY_BLOGS:
+        blogs[blog_id] = {
+            "exists": tistory_playwright.cookies_exist(blog_id),
+            "url": f"https://{blog_id}.tistory.com",
+        }
+    return jsonify({"blogs": blogs})
+
+
+@app.route("/tistory-login", methods=["POST"])
+def tistory_login():
+    """티스토리 쿠키 업로드."""
+    import tistory_playwright
+    data = request.get_json()
+    blog_id = data.get("blog_id", "")
+    cookies_json = data.get("cookies", "")
+    if not blog_id or not cookies_json:
+        return jsonify({"error": "blog_id와 cookies가 필요합니다."}), 400
+    result = tistory_playwright.upload_cookies(blog_id, cookies_json)
+    if result["success"]:
+        return jsonify(result)
+    else:
+        return jsonify({"error": result["error"]}), 400
+
+
+# ──────────────────────────────────────────────
 # 2단계: IndexNow (Bing / Naver)
 # ──────────────────────────────────────────────
 
@@ -2197,6 +2264,7 @@ def _default_config():
 def api_dashboard_status():
     """대시보드 상태 정보."""
     import naver_playwright
+    import tistory_playwright as tistory_pw
 
     queue = _load_json(_QUEUE_PATH, [])
     config = _load_json(_CONFIG_PATH, _default_config())
@@ -2218,6 +2286,7 @@ def api_dashboard_status():
             "cookie_exists": naver_playwright.cookies_exist(),
             "blog_id": NAVER_BLOG_ID or "(미설정)",
         },
+        "tistory": {blog_id: tistory_pw.cookies_exist(blog_id) for blog_id in TISTORY_BLOGS},
     })
 
 
