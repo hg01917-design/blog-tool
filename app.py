@@ -2636,7 +2636,7 @@ def api_queue_bulk_add():
         queue.append(entry)
         added.append(entry)
     _save_json(_QUEUE_PATH, queue)
-    return jsonify({"success": True, "added": len(added)})
+    return jsonify({"success": True, "added": len(added), "entries": added})
 
 
 @app.route("/api/queue/<entry_id>", methods=["DELETE"])

@@ -351,7 +351,7 @@ async function loadQueue() {
   try {
     const resp = await fetch('/api/queue');
     const data = await resp.json();
-    queueData = data.items || data || [];
+    queueData = Array.isArray(data.queue) ? data.queue : Array.isArray(data.items) ? data.items : Array.isArray(data) ? data : [];
     renderAll();
   } catch(e) {
     showToast('큐 로드 실패: ' + e.message);
@@ -377,7 +377,8 @@ async function addKeyword() {
     });
     const data = await resp.json();
     if (data.error) { showToast(data.error); return; }
-    queueData.unshift(data.item || data);
+    if (!Array.isArray(queueData)) queueData = [];
+    queueData.unshift(data.entry || data.item || data);
     renderAll();
     $('kwInput').value = '';
     showToast('키워드 추가됨: ' + keyword);
@@ -412,7 +413,8 @@ async function bulkAdd() {
     });
     const data = await resp.json();
     if (data.error) { showToast(data.error); return; }
-    const added = data.items || data || [];
+    const added = Array.isArray(data.entries) ? data.entries : Array.isArray(data.items) ? data.items : [];
+    if (!Array.isArray(queueData)) queueData = [];
     queueData = [...added, ...queueData];
     renderAll();
     $('bulkTextarea').value = '';
