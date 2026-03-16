@@ -164,6 +164,77 @@ def _update_keyword_status(keyword_id: str, updates: dict):
 
 
 # ──────────────────────────────────────────────
+#  키워드 사전 조사 (웹서치)
+# ──────────────────────────────────────────────
+
+def _research_keyword(keyword: str, claude_client, model: str) -> str:
+    """Claude web_search 도구로 키워드를 조사하여 글 유형 판단용 context를 반환합니다.
+
+    Returns:
+        키워드 분석 결과 문자열. 실패 시 빈 문자열.
+    """
+    try:
+        resp = claude_client.messages.create(
+            model=model,
+            max_tokens=1024,
+            tools=[{"type": "web_search_20250305", "name": "web_search"}],
+            messages=[{
+                "role": "user",
+                "content": (
+                    f"다음 키워드에 대해 웹 검색을 한 뒤, 아래 항목을 간결하게 정리해주세요.\n\n"
+                    f"키워드: {keyword}\n\n"
+                    f"정리 항목:\n"
+                    f"1. 이 키워드가 가리키는 제도/서비스/주제가 무엇인지 (1~2문장)\n"
+                    f"2. 대상자 (누가 받을 수 있는지 / 누구를 위한 것인지)\n"
+                    f"3. 핵심 수치 (지원 금액, 기간, 조건 등)\n"
+                    f"4. 글 유형 판단: 38세 직장인 워킹맘(세 아이: 초등/유치원/어린이집)이 "
+                    f"직접 해봤을 가능성이 높으면 '체험형', "
+                    f"해당되지 않는 대상이면 '정보형'으로 판단하고 이유를 1문장으로 설명\n\n"
+                    f"응답 형식:\n"
+                    f"---제도설명---\n(내용)\n"
+                    f"---대상자---\n(내용)\n"
+                    f"---핵심수치---\n(내용)\n"
+                    f"---글유형---\n(체험형 또는 정보형): (이유)"
+                ),
+            }],
+        )
+
+        # web_search 도구 사용 후 최종 텍스트 응답 추출
+        result_text = ""
+        for block in resp.content:
+            if hasattr(block, "text"):
+                result_text += block.text
+
+        if not result_text.strip():
+            return ""
+
+        # 글유형 판단 결과를 명시적 지시문으로 변환
+        context = result_text.strip()
+        if "---글유형---" in context:
+            type_section = context.split("---글유형---")[1].strip().split("\n")[0]
+            if "정보형" in type_section:
+                context += (
+                    "\n\n[웹서치 기반 글 유형 지시] 이 키워드는 페르소나(하린)가 직접 해당되지 않는 "
+                    "제도입니다. 반드시 정보형으로 작성하세요. "
+                    "1인칭 체험 표현('해봤더니', '신청해봤는데', '저도 받았는데') 절대 금지. "
+                    "'찾아보니', '알아봤는데', '정리해봤어요' 등의 표현을 사용하세요."
+                )
+            elif "체험형" in type_section:
+                context += (
+                    "\n\n[웹서치 기반 글 유형 지시] 이 키워드는 페르소나(하린)가 직접 해당될 수 있는 "
+                    "제도입니다. 체험형으로 작성하세요. "
+                    "1인칭 경험담('해봤더니', '신청해봤는데') 표현을 자연스럽게 활용하세요."
+                )
+
+        logger.info(f"[웹서치] 키워드 조사 완료: {keyword}")
+        return context
+
+    except Exception as e:
+        logger.warning(f"[웹서치] 키워드 조사 실패 ({keyword}): {e}")
+        return ""
+
+
+# ──────────────────────────────────────────────
 #  글 생성 (app.py 로직 재현)
 # ──────────────────────────────────────────────
 
@@ -220,6 +291,11 @@ def generate_article(keyword: str, platform: str = "naver",
 
     system_prompt = seo_prompts[platform]
     system_prompt += f"\n\n현재 연도는 {datetime.now().year}년입니다. 제목과 본문에 연도가 필요하면 반드시 이 연도를 사용하세요."
+
+    # ── 0단계: 웹서치로 키워드 사전 조사 ──
+    keyword_context = _research_keyword(keyword, claude_client, use_model)
+    if keyword_context:
+        system_prompt += f"\n\n[키워드 사전 조사 결과]\n{keyword_context}"
 
     if tone == "experience":
         system_prompt += (
