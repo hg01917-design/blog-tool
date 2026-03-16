@@ -6,6 +6,7 @@ import secrets
 import json
 import random
 from datetime import datetime
+from typing import Optional
 import requests as http_requests
 from functools import wraps
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for
@@ -1354,7 +1355,7 @@ def _generate_body_with_web_search(system_prompt: str, body_prompt: str, keyword
     return result.strip()
 
 
-def _generate_imagen_thumbnail(title: str, keyword: str) -> bytes | None:
+def _generate_imagen_thumbnail(title: str, keyword: str) -> Optional[bytes]:
     """Google Imagen 3로 썸네일 생성 → 800x800 크롭 + 제목 오버레이 → WebP bytes 반환."""
     if not GOOGLE_API_KEY:
         print("[Imagen] GOOGLE_API_KEY 미설정")

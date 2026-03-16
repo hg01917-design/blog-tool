@@ -17,6 +17,7 @@ import re
 import uuid
 import fcntl
 from datetime import datetime, timedelta
+from typing import Optional
 from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -35,7 +36,7 @@ _LOG_FILE = os.path.join(_DATA_DIR, "publish_log.json")
 KST = ZoneInfo("Asia/Seoul")
 
 # 스케줄러 싱글턴
-_scheduler: BackgroundScheduler | None = None
+_scheduler: Optional[BackgroundScheduler] = None
 _flask_app = None
 
 # ──────────────────────────────────────────────
@@ -136,7 +137,7 @@ def _save_config(config: dict):
 #  키워드 큐 관리
 # ──────────────────────────────────────────────
 
-def _get_next_pending(keyword_id: str | None = None) -> dict | None:
+def _get_next_pending(keyword_id: Optional[str] = None) -> Optional[dict]:
     """다음 대기 중인 키워드를 반환합니다.
 
     keyword_id가 지정되면 해당 키워드를, 아니면 첫 번째 pending을 반환합니다.
@@ -749,7 +750,7 @@ def toggle_scheduler(enabled: bool) -> dict:
         return {"enabled": False, "next_run_at": None}
 
 
-def run_single(keyword_id: str | None = None) -> dict:
+def run_single(keyword_id: Optional[str] = None) -> dict:
     """수동으로 단일 키워드를 발행합니다.
 
     Args:
