@@ -573,7 +573,7 @@ tbody tr:hover { background: rgba(20,18,16,0.02); }
     <div class="acct-list" id="acct-list"></div>
     <button class="acct-add" id="acct-add-btn" onclick="toggleAddForm()">+ 계정 추가</button>
     <div class="acct-add-form" id="acct-add-form">
-      <input type="text" id="acct-add-input" placeholder="블로그 주소 (예: myblog.tistory.com)">
+      <input type="text" id="acct-add-input" placeholder="아이디 (예: baremi542)">
       <button onclick="addAccount()">추가</button>
     </div>
   </div>
@@ -861,13 +861,13 @@ function toggleAddForm() {
 
 async function addAccount() {
   const platform = document.getElementById('plat-select').value;
-  const url = document.getElementById('acct-add-input').value.trim();
-  if (!url) return;
+  const blogId = document.getElementById('acct-add-input').value.trim();
+  if (!blogId) return;
   try {
     const res = await fetch('/api/accounts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ platform: platform, url: url })
+      body: JSON.stringify({ platform: platform, blog_id: blogId })
     });
     if (res.ok) {
       document.getElementById('acct-add-input').value = '';

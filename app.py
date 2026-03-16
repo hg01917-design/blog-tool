@@ -2686,23 +2686,29 @@ def api_queue_priority(entry_id):
 
 @app.route("/api/accounts", methods=["POST"])
 def api_accounts_add():
-    """계정 추가."""
+    """계정 추가. blog_id(아이디)만 받으면 URL 자동 생성."""
     data = request.get_json()
     platform = data.get("platform", "")
-    url = data.get("url", "").strip().rstrip("/")
-    if not platform or not url:
-        return jsonify({"error": "플랫폼과 URL이 필요합니다."}), 400
+    blog_id = data.get("blog_id", "").strip()
 
-    # URL에서 blog_id 추출
-    if platform == "tistory":
-        blog_id = url.replace("https://", "").replace("http://", "").split(".")[0]
-        if not url.endswith(".tistory.com"):
-            url = f"https://{blog_id}.tistory.com"
-    elif platform == "naver":
-        blog_id = url.replace("https://blog.naver.com/", "").replace("http://", "").split("/")[0].split(".")[0]
+    # 하위 호환: 기존 url 파라미터도 지원
+    if not blog_id:
+        url_input = data.get("url", "").strip().rstrip("/")
+        if url_input:
+            blog_id = url_input.replace("https://", "").replace("http://", "").split(".")[0].split("/")[-1]
+
+    if not platform or not blog_id:
+        return jsonify({"error": "플랫폼과 아이디가 필요합니다."}), 400
+
+    # 플랫폼별 URL 자동 생성
+    if platform == "naver":
         url = f"https://blog.naver.com/{blog_id}"
+    elif platform == "tistory":
+        url = f"https://{blog_id}.tistory.com"
+    elif platform == "wordpress":
+        url = f"https://{blog_id}.com"
     else:
-        blog_id = url.replace("https://", "").replace("http://", "").split("/")[0]
+        url = f"https://{blog_id}"
 
     accounts = _load_accounts()
     if platform not in accounts:
