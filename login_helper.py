@@ -29,19 +29,16 @@ except ImportError:
 
 DEFAULT_SERVER = "https://app.baremi542.com"
 LOGIN_URL = "https://nid.naver.com/nidlogin.login"
-TIMEOUT_SEC = 120
 
 
 def main():
     parser = argparse.ArgumentParser(description="네이버 로그인 → 쿠키 자동 전송")
     parser.add_argument("--account", required=True, help="계정 ID (예: baremi542)")
     parser.add_argument("--server", default=DEFAULT_SERVER, help=f"서버 URL (기본: {DEFAULT_SERVER})")
-    parser.add_argument("--timeout", type=int, default=TIMEOUT_SEC, help=f"로그인 대기 시간 초 (기본: {TIMEOUT_SEC})")
     args = parser.parse_args()
 
     account_id = args.account
     server_url = args.server.rstrip("/")
-    timeout = args.timeout
 
     print(f"[1/4] 네이버 로그인 창을 엽니다...")
     print(f"      계정: {account_id}")
@@ -63,32 +60,28 @@ def main():
         try:
             page.goto(LOGIN_URL, wait_until="domcontentloaded")
             print(f"[2/4] 로그인 페이지가 열렸습니다. 브라우저에서 로그인하세요.")
-            print(f"      ({timeout}초 내에 완료해주세요)")
+            print()
+            input("      >>> 로그인 완료 후 여기서 Enter를 누르세요 <<<")
             print()
 
-            # 로그인 완료 대기: NID_AUT 또는 NID_SES 쿠키 감지
-            deadline = time.time() + timeout
-            logged_in = False
-            while time.time() < deadline:
-                cookies = context.cookies()
-                cookie_names = {c["name"] for c in cookies}
-                if "NID_AUT" in cookie_names or "NID_SES" in cookie_names:
-                    logged_in = True
-                    break
-                time.sleep(1)
-
-            if not logged_in:
-                print(f"[실패] {timeout}초 내에 로그인이 완료되지 않았습니다.")
-                return
-
-            print(f"[3/4] 로그인 감지! 쿠키를 수집합니다...")
-
-            # 블로그 페이지 방문하여 블로그 관련 쿠키도 수집
+            # 블로그 페이지 방문 → 로그인 상태 + 블로그 쿠키 수집
+            print(f"[3/4] 로그인 상태를 확인합니다...")
             page.goto(f"https://blog.naver.com/{account_id}", wait_until="domcontentloaded")
             time.sleep(2)
 
+            # 로그인 여부 확인: 로그인 페이지로 리다이렉트되면 실패
+            if "nidlogin" in page.url or "nid.naver.com" in page.url:
+                print(f"[실패] 로그인되지 않았습니다. 브라우저에서 로그인을 완료했는지 확인하세요.")
+                return
+
             all_cookies = context.cookies()
-            print(f"      쿠키 {len(all_cookies)}개 수집 완료")
+            # NID_AUT 쿠키 존재 확인
+            cookie_names = {c["name"] for c in all_cookies}
+            if "NID_AUT" not in cookie_names and "NID_SES" not in cookie_names:
+                print(f"[실패] 로그인 쿠키가 없습니다. 다시 시도해주세요.")
+                return
+
+            print(f"      로그인 확인 완료! 쿠키 {len(all_cookies)}개 수집")
 
             # 서버로 쿠키 전송
             print(f"[4/4] 서버로 쿠키를 전송합니다...")
