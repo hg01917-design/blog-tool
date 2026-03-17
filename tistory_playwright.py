@@ -126,31 +126,25 @@ def upload_cookies(blog_id: str, cookies_json: str) -> dict:
         return {"success": False, "error": f"JSON 파싱 실패: {e}"}
 
 
-def publish_to_tistory(blog_id: str, title: str, body_html: str, tags: list[str]) -> dict:
+def publish_to_tistory(blog_id: str, title: str, body_html: str, tags: list[str],
+                       account_id: str = None) -> dict:
     """티스토리 블로그에 글을 임시저장합니다.
 
-    발행 순서:
-    1. 쿠키 로드
-    2. 글쓰기 페이지 이동
-    3. 로그인 확인
-    4. HTML 모드 전환
-    5. 제목 입력
-    6. 본문 HTML 붙여넣기
-    7. 태그 입력
-    8. 임시저장
-
     Args:
-        blog_id: 티스토리 블로그 ID (예: "goodisak")
+        blog_id: 티스토리 블로그 ID 또는 커스텀 도메인 (글쓰기 URL용)
         title: 글 제목
         body_html: HTML 본문 (adsense 코드 포함)
         tags: 태그 리스트
+        account_id: 쿠키 저장에 사용된 계정 ID (없으면 blog_id 사용)
     """
     global _last_publish_time
 
     if not blog_id:
         return {"success": False, "error": "blog_id가 지정되지 않았습니다.", "steps": []}
 
-    if not cookies_exist(blog_id):
+    # 쿠키는 account_id 기준으로 저장됨
+    cookie_id = account_id or blog_id
+    if not cookies_exist(cookie_id):
         return {"success": False, "error": "티스토리 쿠키가 없습니다. 먼저 로그인해주세요.", "steps": []}
 
     # Rate limit
@@ -161,7 +155,7 @@ def publish_to_tistory(blog_id: str, title: str, body_html: str, tags: list[str]
         return {"success": False, "error": f"발행 간격 제한: {wait}초 후 다시 시도해주세요.", "steps": []}
 
     steps = []
-    cookie_path = _get_cookie_path(blog_id)
+    cookie_path = _get_cookie_path(cookie_id)
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
@@ -185,7 +179,11 @@ def publish_to_tistory(blog_id: str, title: str, body_html: str, tags: list[str]
             page = context.new_page()
 
             # 2) 글쓰기 페이지 이동
-            write_url = f"https://{blog_id}.tistory.com/manage/post/new"
+            # 커스텀 도메인이면 그대로 사용, 아니면 .tistory.com 붙임
+            if "." in blog_id and not blog_id.endswith(".tistory.com"):
+                write_url = f"https://{blog_id}/manage/post/new"
+            else:
+                write_url = f"https://{blog_id}.tistory.com/manage/post/new"
             page.goto(write_url, wait_until="domcontentloaded", timeout=30000)
             time.sleep(3)
 

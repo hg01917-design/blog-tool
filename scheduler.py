@@ -634,6 +634,7 @@ def _publish_pipeline(keyword_entry: dict) -> dict:
             pub_result = tistory_playwright.publish_to_tistory(
                 blog_id=actual_blog_id or account_id,
                 title=title, body_html=body, tags=tags_list,
+                account_id=account_id,
             )
         else:
             # 네이버 (기본)
