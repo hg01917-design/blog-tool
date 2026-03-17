@@ -1195,6 +1195,17 @@ def generate():
     # 현재 연도 안내 (AI가 과거 연도를 쓰지 않도록)
     system_prompt += f"\n\n현재 연도는 {datetime.now().year}년입니다. 제목과 본문에 연도가 필요하면 반드시 이 연도를 사용하세요."
 
+    # 지원금/제도/정책 관련 키워드: 웹 검색 기반 작성 지시
+    _policy_kw_check = ["지원금", "지원", "신청", "혜택", "정책", "제도", "보조금", "캐시백", "난방비", "바우처", "수당", "감면", "할인"]
+    if any(pk in keyword for pk in _policy_kw_check):
+        system_prompt += (
+            "\n\n[정보 정확도 — 웹 검색 필수]\n"
+            "- 지원금/제도/정책/혜택 관련 내용은 반드시 web_search로 공식 사이트를 검색한 후 작성할 것\n"
+            "- 반드시 확인할 항목: 정확한 신청 기간(날짜), 지원 금액, 신청 자격 기준\n"
+            "- 검색 결과 기반으로만 수치/날짜를 작성할 것. 검색 안 되면 '공식 홈페이지 확인 필요'로 처리\n"
+            "- 추측성 표현 금지 ('약 ~만원 정도', '~쯤' 등 금지)"
+        )
+
     # 체험형 모드: 1인칭 경험담 톤 추가
     if tone == "experience":
         system_prompt += (
@@ -1334,8 +1345,11 @@ def generate():
         title = meta_content.strip().split("\n")[0].strip()
 
     # ── 2단계: 블로그 본문 생성 ──
-    # 정부지원금/공략 등 최신 정보가 필요한 경우 웹 검색
-    use_web_search = (category == "government" or subtype == "walkthrough")
+    # 정부지원금/공략/지원제도 등 최신 정보가 필요한 경우 웹 검색
+    _policy_keywords = ["지원금", "지원", "신청", "혜택", "정책", "제도", "보조금", "캐시백", "난방비", "바우처", "수당", "감면", "할인"]
+    _keyword_needs_search = any(pk in keyword for pk in _policy_keywords)
+    use_web_search = (category == "government" or subtype == "walkthrough"
+                      or (category == "living" and _keyword_needs_search))
 
     # 네이버 도입부 랜덤 선택
     naver_intros = [
@@ -1458,9 +1472,13 @@ def generate():
 
 def _generate_body_with_web_search(system_prompt: str, body_prompt: str, keyword: str, category: str = "", model: str = "") -> str:
     """웹 검색 → 요약 → 본문 생성의 2단계로 처리합니다.
-    1단계: Haiku + web_search로 검색 결과 요약 (저비용)
-    2단계: Sonnet으로 요약 기반 본문 작성 (검색 없이)"""
+    1단계: Sonnet + web_search로 검색 결과 요약
+    2단계: 지정 모델로 요약 기반 본문 작성 (검색 없이)"""
     use_model = model if model else _get_model()
+    # web_search는 claude-sonnet-4-5 이상 필요 (Haiku 미지원)
+    search_model = use_model
+    if "haiku" in search_model:
+        search_model = AVAILABLE_MODELS["sonnet"]
 
     # ── 1단계: Haiku로 웹 검색 + 핵심 정보 요약 ──
     if category == "government":
@@ -1494,7 +1512,7 @@ def _generate_body_with_web_search(system_prompt: str, body_prompt: str, keyword
     for _ in range(3):  # 최대 3회 continuation
         try:
             resp = claude_client.messages.create(
-                model=use_model,
+                model=search_model,
                 max_tokens=1024,
                 messages=messages,
                 tools=tools,
