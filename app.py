@@ -2777,6 +2777,29 @@ def api_accounts_add():
     return jsonify({"success": True})
 
 
+@app.route("/api/accounts/<entry_id>", methods=["PATCH"])
+def api_accounts_update(entry_id):
+    """계정 정보 수정 (blog_id 등)."""
+    data = request.get_json()
+    accounts = _load_accounts()
+    found = False
+    for platform, accts in accounts.items():
+        for a in accts:
+            if a["id"] == entry_id:
+                if "blog_id" in data:
+                    a["blog_id"] = data["blog_id"].strip()
+                if "name" in data:
+                    a["name"] = data["name"].strip()
+                found = True
+                break
+
+    if not found:
+        return jsonify({"error": "계정을 찾을 수 없습니다."}), 404
+
+    _save_json(_ACCOUNTS_PATH, accounts)
+    return jsonify({"success": True})
+
+
 @app.route("/api/accounts/<entry_id>", methods=["DELETE"])
 def api_accounts_delete(entry_id):
     """계정 삭제."""

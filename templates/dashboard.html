@@ -924,13 +924,16 @@ function renderAccounts() {
       statusText = 'API 연동';
     }
 
+    var blogIdLabel = (acct.blog_id && acct.blog_id !== acct.id) ? ' · 블로그: ' + acct.blog_id : '';
+
     return '<div class="acct-item">'
       + '<span class="acct-dot ' + dotClass + '"></span>'
       + '<div class="acct-info">'
-      + '  <div class="acct-name">' + (acct.name || acct.url) + '</div>'
+      + '  <div class="acct-name">' + (acct.name || acct.url) + blogIdLabel + '</div>'
       + '  <div class="acct-url">' + acct.url + (statusText ? ' · ' + statusText : '') + '</div>'
       + '</div>'
       + '<button class="acct-btn cookie" onclick="showLoginModal(\'' + acct.id + '\')" title="로그인">로그인</button>'
+      + '<button class="acct-btn cookie" onclick="editBlogId(\'' + acct.id + '\',\'' + (acct.blog_id || acct.id) + '\')" title="블로그ID 수정" style="background:rgba(37,99,235,0.1);color:#2563EB">편집</button>'
       + '<button class="acct-btn delete" onclick="deleteAccount(\'' + platform + '\',\'' + acct.id + '\')" title="삭제">&times;</button>'
       + '<button class="acct-btn publish" id="pub-btn-' + acct.id + '" onclick="publishAccount(\'' + platform + '\',\'' + acct.id + '\',this)">발행</button>'
       + '<span class="pub-status" id="pub-status-' + acct.id + '"></span>'
@@ -1101,6 +1104,25 @@ function startStatusPoll(id, btn) {
       if (statusEl) { statusEl.textContent = '시간 초과 - 로그를 확인하세요'; statusEl.className = 'pub-status failed'; }
     }
   }, 300000);
+}
+
+// ---- Edit blog_id ----
+async function editBlogId(accountId, currentBlogId) {
+  var newBlogId = prompt('블로그 ID 수정\n(로그인 ID와 블로그 ID가 다른 경우 실제 블로그 ID 입력)\n\n현재: ' + currentBlogId, currentBlogId);
+  if (!newBlogId || newBlogId.trim() === currentBlogId) return;
+  try {
+    var res = await fetch('/api/accounts/' + accountId, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ blog_id: newBlogId.trim() })
+    });
+    if (res.ok) {
+      fetchStatus();
+    } else {
+      var d = await res.json();
+      alert(d.error || '수정 실패');
+    }
+  } catch (e) { alert('서버 연결 실패'); }
 }
 
 // ---- Screenshot slide modal ----
