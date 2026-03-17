@@ -235,7 +235,7 @@ def publish_to_tistory(blog_id: str, title: str, body_html: str, tags: list[str]
             time.sleep(random.uniform(1.0, 3.0))
 
             # 6) 본문 HTML 입력 (TinyMCE) + 소제목별 이미지 삽입
-            _type_body_html(page, body_html, images=section_images)
+            _type_body_html(page, body_html, images=section_images, blog_id=blog_id)
             steps.append({"step": "본문 입력", "status": "success",
                           "images": len(section_images)})
             time.sleep(random.uniform(1.0, 3.0))
@@ -441,7 +441,7 @@ def _type_title(page, title: str):
     raise RuntimeError("제목 입력 필드를 찾을 수 없습니다.")
 
 
-def _type_body_html(page, body_html: str, images: list = None):
+def _type_body_html(page, body_html: str, images: list = None, blog_id: str = ""):
     """TinyMCE iframe 안에서 타이핑 방식으로 본문을 입력합니다.
     ##H2:소제목##, ##H3:소제목##, ##AD## 마크업을 인식하여 처리합니다.
     images: 이미지 파일 경로 리스트. H2 소제목 뒤에 순서대로 삽입."""
@@ -477,6 +477,13 @@ def _type_body_html(page, body_html: str, images: list = None):
     # ##H2/H3/AD## 마크업 보존, HTML 태그에서 H2/H3도 마크업으로 변환
     text = _re.sub(r'<h2[^>]*>(.*?)</h2>', r'##H2:\1##', text, flags=_re.DOTALL)
     text = _re.sub(r'<h3[^>]*>(.*?)</h3>', r'##H3:\1##', text, flags=_re.DOTALL)
+    # 애드센스 HTML 블록을 ##AD## 마커로 보존 (HTML 스트립 전에 처리)
+    text = _re.sub(
+        r'<div class="ad-container"[^>]*>.*?</div>',
+        '##AD##',
+        text,
+        flags=_re.DOTALL,
+    )
     text = _re.sub(r'<br\s*/?>', '\n', text)
     text = _re.sub(r'</(?:p|div|li|tr)>', '\n', text)
     text = _re.sub(r'<[^>]+>', '', text)
@@ -512,7 +519,7 @@ def _type_body_html(page, body_html: str, images: list = None):
 
             # H2 뒤에 이미지 삽입
             if h2_count < len(images):
-                _insert_image_into_tinymce(page, frame, images[h2_count], alt_text=heading_text)
+                _insert_image_into_tinymce(page, frame, images[h2_count], alt_text=heading_text, blog_id=blog_id)
             h2_count += 1
             continue
 
@@ -802,16 +809,55 @@ def _generate_imagen(prompt: str) -> str:
     return tmp.name
 
 
-def _insert_image_into_tinymce(page, frame, img_path: str, alt_text: str = ""):
+def _upload_image_to_tistory(page, img_path: str, blog_id: str) -> str:
+    """티스토리 이미지 업로드 API로 이미지를 업로드하고 CDN URL을 반환합니다."""
+    with open(img_path, "rb") as f:
+        img_bytes = f.read()
+    img_b64 = base64.b64encode(img_bytes).decode("ascii")
+    fname = os.path.basename(img_path)
+
+    result = page.evaluate("""([b64, fname, blogId]) => {
+        return new Promise((resolve, reject) => {
+            const byteStr = atob(b64);
+            const bytes = new Uint8Array(byteStr.length);
+            for (let i = 0; i < byteStr.length; i++) bytes[i] = byteStr.charCodeAt(i);
+            const blob = new Blob([bytes], {type: 'image/png'});
+            const fd = new FormData();
+            fd.append('image', blob, fname);
+            fd.append('editor', 'tinymce');
+            const url = `https://${blogId}.tistory.com/manage/post/image-upload`;
+            fetch(url, {method: 'POST', body: fd, credentials: 'include'})
+                .then(r => r.json())
+                .then(data => resolve(JSON.stringify(data)))
+                .catch(e => reject(e.message));
+        });
+    }""", [img_b64, fname, blog_id])
+
+    data = json.loads(result)
+    # 티스토리 응답에서 URL 추출
+    img_url = data.get("url") or data.get("imageUrl") or data.get("src", "")
+    if not img_url:
+        raise RuntimeError(f"이미지 URL을 받지 못했습니다: {data}")
+    logger.info(f"티스토리 이미지 업로드 완료: {img_url}")
+    return img_url
+
+
+def _insert_image_into_tinymce(page, frame, img_path: str, alt_text: str = "",
+                                blog_id: str = ""):
     """TinyMCE iframe에 이미지를 삽입합니다.
-    이미지를 base64 data URL로 변환 후 insertContent API로 삽입."""
+    티스토리 이미지 업로드 API로 업로드 후 URL로 삽입합니다."""
     try:
-        with open(img_path, "rb") as f:
-            img_b64 = base64.b64encode(f.read()).decode("ascii")
+        if blog_id:
+            img_url = _upload_image_to_tistory(page, img_path, blog_id)
+        else:
+            # fallback: base64 (blog_id 없을 때)
+            with open(img_path, "rb") as f:
+                img_b64 = base64.b64encode(f.read()).decode("ascii")
+            img_url = f"data:image/png;base64,{img_b64}"
 
         img_html = (
             f'<figure style="margin:1.2em 0;text-align:center;">'
-            f'<img src="data:image/png;base64,{img_b64}" '
+            f'<img src="{img_url}" '
             f'alt="{alt_text}" '
             f'style="max-width:100%;height:auto;border-radius:8px;" />'
             f'</figure><p>&nbsp;</p>'
