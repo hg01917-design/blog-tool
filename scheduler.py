@@ -526,6 +526,33 @@ def generate_article(keyword: str, platform: str = "naver",
     return result
 
 
+def _resolve_blog_id(account_id: str, platform: str, category: str = "") -> str:
+    """accounts.json에서 실제 blog_id를 조회합니다.
+    - 네이버: account_id → blog_id 매핑
+    - 티스토리: account_id → blogs 배열에서 카테고리 매칭 → blog_id
+    """
+    try:
+        accounts_path = os.path.join(_APP_DIR, "data", "accounts.json")
+        if not os.path.exists(accounts_path):
+            return account_id
+        with open(accounts_path, "r", encoding="utf-8") as af:
+            accounts = json.load(af)
+        for acct in accounts.get(platform, []):
+            if acct.get("id") == account_id:
+                # 티스토리 멀티 블로그: 카테고리 매칭
+                blogs = acct.get("blogs", [])
+                if blogs and platform == "tistory":
+                    for b in blogs:
+                        if b.get("category") and category and b["category"] in category:
+                            return b["blog_id"]
+                    # 매칭 없으면 첫 번째 블로그
+                    return blogs[0].get("blog_id", account_id)
+                return acct.get("blog_id", account_id)
+    except Exception:
+        pass
+    return account_id
+
+
 # ──────────────────────────────────────────────
 #  발행 파이프라인
 # ──────────────────────────────────────────────
@@ -589,19 +616,7 @@ def _publish_pipeline(keyword_entry: dict) -> dict:
     # 2) 네이버 발행
     logger.info(f"[스케줄러] 네이버 발행 시작: {title}")
     try:
-        # accounts.json에서 실제 blog_id 조회 (account_id와 다를 수 있음)
-        actual_blog_id = account_id
-        try:
-            accounts_path = os.path.join(_APP_DIR, "data", "accounts.json")
-            if os.path.exists(accounts_path):
-                with open(accounts_path, "r", encoding="utf-8") as af:
-                    accounts = json.load(af)
-                for acct in accounts.get("naver", []):
-                    if acct.get("id") == account_id:
-                        actual_blog_id = acct.get("blog_id", account_id)
-                        break
-        except Exception:
-            pass
+        actual_blog_id = _resolve_blog_id(account_id, platform, category)
         pub_result = naver_playwright.publish_to_naver(title, body, tags_list, blog_id=actual_blog_id or None, entry_id=keyword_id)
     except Exception as e:
         error_msg = f"네이버 발행 예외: {str(e)}"

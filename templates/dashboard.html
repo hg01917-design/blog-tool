@@ -924,7 +924,12 @@ function renderAccounts() {
       statusText = 'API 연동';
     }
 
-    var blogIdLabel = (acct.blog_id && acct.blog_id !== acct.id) ? ' · 블로그: ' + acct.blog_id : '';
+    var blogIdLabel = '';
+    if (platform === 'tistory' && acct.blogs && acct.blogs.length > 0) {
+      blogIdLabel = ' · ' + acct.blogs.map(function(b) { return b.blog_id + (b.category ? '(' + b.category + ')' : ''); }).join(', ');
+    } else if (acct.blog_id && acct.blog_id !== acct.id) {
+      blogIdLabel = ' · 블로그: ' + acct.blog_id;
+    }
 
     return '<div class="acct-item">'
       + '<span class="acct-dot ' + dotClass + '"></span>'
@@ -975,7 +980,9 @@ function showLoginModal(accountId) {
   const old = document.getElementById('login-modal');
   if (old) old.remove();
 
-  const cmd = 'python login_helper.py --account ' + accountId;
+  const platform = document.getElementById('plat-select').value;
+  const platFlag = platform !== 'naver' ? ' --platform ' + platform : '';
+  const cmd = 'python login_helper.py --account ' + accountId + platFlag;
   const modal = document.createElement('div');
   modal.id = 'login-modal';
   modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999';
@@ -1106,23 +1113,47 @@ function startStatusPoll(id, btn) {
   }, 300000);
 }
 
-// ---- Edit blog_id ----
+// ---- Edit blog_id / tistory blogs ----
 async function editBlogId(accountId, currentBlogId) {
-  var newBlogId = prompt('블로그 ID 수정\n(로그인 ID와 블로그 ID가 다른 경우 실제 블로그 ID 입력)\n\n현재: ' + currentBlogId, currentBlogId);
-  if (!newBlogId || newBlogId.trim() === currentBlogId) return;
-  try {
-    var res = await fetch('/api/accounts/' + accountId, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ blog_id: newBlogId.trim() })
-    });
-    if (res.ok) {
-      fetchStatus();
-    } else {
-      var d = await res.json();
-      alert(d.error || '수정 실패');
-    }
-  } catch (e) { alert('서버 연결 실패'); }
+  var platform = document.getElementById('plat-select').value;
+
+  if (platform === 'tistory') {
+    // 티스토리: blogs 배열 편집
+    var d = window._platData || {};
+    var accounts = (d.accounts && d.accounts[platform]) || [];
+    var acct = accounts.find(function(a) { return a.id === accountId; });
+    var blogs = (acct && acct.blogs) || [{ blog_id: currentBlogId, category: '' }];
+    var blogsStr = blogs.map(function(b) { return b.blog_id + ':' + (b.category || ''); }).join('\n');
+    var input = prompt('티스토리 블로그 목록 편집\n(한 줄에 하나씩: 블로그ID:카테고리)\n예시:\nbaremi542:지원금\ngoodisak:IT\n\n빈 카테고리는 기본값으로 사용', blogsStr);
+    if (!input) return;
+    var newBlogs = input.trim().split('\n').map(function(line) {
+      var parts = line.trim().split(':');
+      return { blog_id: parts[0].trim(), category: (parts[1] || '').trim() };
+    }).filter(function(b) { return b.blog_id; });
+    if (newBlogs.length === 0) return;
+    try {
+      var res = await fetch('/api/accounts/' + accountId, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ blogs: newBlogs })
+      });
+      if (res.ok) fetchStatus();
+      else { var r = await res.json(); alert(r.error || '수정 실패'); }
+    } catch (e) { alert('서버 연결 실패'); }
+  } else {
+    // 네이버/워드프레스: blog_id 수정
+    var newBlogId = prompt('블로그 ID 수정\n(로그인 ID와 블로그 ID가 다른 경우 실제 블로그 ID 입력)\n\n현재: ' + currentBlogId, currentBlogId);
+    if (!newBlogId || newBlogId.trim() === currentBlogId) return;
+    try {
+      var res = await fetch('/api/accounts/' + accountId, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ blog_id: newBlogId.trim() })
+      });
+      if (res.ok) fetchStatus();
+      else { var r = await res.json(); alert(r.error || '수정 실패'); }
+    } catch (e) { alert('서버 연결 실패'); }
+  }
 }
 
 // ---- Screenshot slide modal ----

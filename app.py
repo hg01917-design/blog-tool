@@ -2906,12 +2906,17 @@ def api_accounts_add():
     if any(a["id"] == blog_id for a in accounts[platform]):
         return jsonify({"error": "이미 등록된 계정입니다."}), 400
 
-    accounts[platform].append({
+    new_account = {
         "id": blog_id,
         "name": blog_id,
         "url": url,
         "blog_id": blog_id,
-    })
+    }
+    # 티스토리: blogs 배열 초기화
+    if platform == "tistory":
+        new_account["blogs"] = [{"blog_id": blog_id, "category": ""}]
+
+    accounts[platform].append(new_account)
     _save_json(_ACCOUNTS_PATH, accounts)
     return jsonify({"success": True})
 
@@ -2929,6 +2934,8 @@ def api_accounts_update(entry_id):
                     a["blog_id"] = data["blog_id"].strip()
                 if "name" in data:
                     a["name"] = data["name"].strip()
+                if "blogs" in data and isinstance(data["blogs"], list):
+                    a["blogs"] = data["blogs"]
                 found = True
                 break
 
