@@ -181,9 +181,9 @@ def publish_to_tistory(blog_id: str, title: str, body_html: str, tags: list[str]
             # 2) 글쓰기 페이지 이동
             # 커스텀 도메인이면 그대로 사용, 아니면 .tistory.com 붙임
             if "." in blog_id and not blog_id.endswith(".tistory.com"):
-                write_url = f"https://{blog_id}/manage/post/new"
+                write_url = f"https://{blog_id}/manage/newpost"
             else:
-                write_url = f"https://{blog_id}.tistory.com/manage/post/new"
+                write_url = f"https://{blog_id}.tistory.com/manage/newpost"
             page.goto(write_url, wait_until="domcontentloaded", timeout=30000)
             time.sleep(3)
 
