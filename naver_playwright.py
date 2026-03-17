@@ -468,6 +468,39 @@ def _translate_to_english(text: str) -> str:
         return text
 
 
+def _fetch_pexels_image(query: str, width: int = 800, height: int = 533) -> str:
+    """Pexels API로 이미지를 검색하여 첫 번째 결과를 다운로드합니다."""
+    api_key = os.environ.get("PEXELS_API_KEY", "")
+    if not api_key:
+        raise RuntimeError("PEXELS_API_KEY가 설정되지 않았습니다.")
+
+    headers = {"Authorization": api_key}
+    params = {"query": query, "per_page": 1, "orientation": "landscape"}
+    resp = http_requests.get(
+        "https://api.pexels.com/v1/search",
+        headers=headers, params=params, timeout=15,
+    )
+    if resp.status_code != 200:
+        raise RuntimeError(f"Pexels API 오류 {resp.status_code}")
+
+    photos = resp.json().get("photos", [])
+    if not photos:
+        raise RuntimeError("Pexels 검색 결과가 없습니다.")
+
+    img_url = photos[0]["src"]["large"]
+    img_resp = http_requests.get(img_url, timeout=30)
+    if img_resp.status_code != 200:
+        raise RuntimeError(f"Pexels 이미지 다운로드 실패 {img_resp.status_code}")
+
+    tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+    tmp.write(img_resp.content)
+    tmp.close()
+
+    _resize_image(tmp.name, width, height)
+    logger.info(f"Pexels fallback 이미지: {query} → {tmp.name}")
+    return tmp.name
+
+
 def _resize_image(path: str, width: int, height: int) -> str:
     """이미지를 정확한 크기로 리사이즈하여 같은 경로에 저장합니다."""
     with Image.open(path) as img:
@@ -499,6 +532,9 @@ def _generate_imagen(prompt: str) -> str:
     }
 
     resp = http_requests.post(url, json=payload, timeout=60)
+    if resp.status_code == 429:
+        logger.warning("Imagen API 429 → Pexels fallback")
+        return _fetch_pexels_image(prompt, 800, 533)
     if resp.status_code != 200:
         raise RuntimeError(f"Imagen API 오류 {resp.status_code}: {resp.text[:200]}")
 
@@ -543,17 +579,25 @@ def _generate_thumbnail_with_text(title: str) -> str:
         "parameters": {"sampleCount": 1, "aspectRatio": "1:1"},
     }
     resp = http_requests.post(url, json=payload, timeout=60)
-    if resp.status_code != 200:
+    if resp.status_code == 429:
+        logger.warning("Imagen 썸네일 429 → Pexels fallback")
+        try:
+            pexels_path = _fetch_pexels_image(en_prompt, 800, 800)
+        except Exception as pe:
+            logger.warning(f"Pexels fallback도 실패: {pe}")
+            raise RuntimeError(f"Imagen 429 + Pexels 실패: {pe}")
+        tmp = type('', (), {'name': pexels_path})()  # tmp.name 호환
+    elif resp.status_code != 200:
         raise RuntimeError(f"Imagen 썸네일 API 오류 {resp.status_code}: {resp.text[:200]}")
+    else:
+        predictions = resp.json().get("predictions", [])
+        if not predictions or not predictions[0].get("bytesBase64Encoded"):
+            raise RuntimeError("Imagen 썸네일 응답에 이미지가 없습니다.")
 
-    predictions = resp.json().get("predictions", [])
-    if not predictions or not predictions[0].get("bytesBase64Encoded"):
-        raise RuntimeError("Imagen 썸네일 응답에 이미지가 없습니다.")
-
-    img_bytes = base64.b64decode(predictions[0]["bytesBase64Encoded"])
-    tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
-    tmp.write(img_bytes)
-    tmp.close()
+        img_bytes = base64.b64decode(predictions[0]["bytesBase64Encoded"])
+        tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+        tmp.write(img_bytes)
+        tmp.close()
 
     # 2) PIL로 800x800 리사이즈 + 텍스트 합성
     img = Image.open(tmp.name).convert("RGB")
