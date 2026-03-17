@@ -952,93 +952,115 @@ def _scrape_naver_blog(url: str) -> dict:
 
 
 def _auto_crawl_for_prompt(keyword: str, category: str = "") -> str:
-    """글 생성 전 카테고리별 크롤링 전략으로 참고 자료를 수집합니다.
-    총 timeout 30초 제한. 실패 시 빈 문자열 반환 (fallback: 크롤링 없이 기존 방식)."""
-    import time as _time
-    deadline = _time.time() + 30
-    UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0"
-    crawled_texts = []
+    """글 생성 전 카테고리별 Playwright 병렬 크롤링으로 참고 자료를 수집합니다.
+    asyncio로 병렬 실행. 전체 timeout 30초, 사이트당 10초.
+    실패 시 빈 문자열 반환 (fallback: 크롤링 없이 기존 방식)."""
+    import asyncio
 
-    def _remaining():
-        return max(1, int(deadline - _time.time()))
-
-    def _crawl_naver_blogs(kw, count=3):
-        """네이버 블로그 상위 N개 크롤링."""
+    async def _crawl_page(pw_browser, url, label, timeout=10000):
+        """단일 페이지 크롤링. domcontentloaded로 빠르게."""
         try:
-            resp = http_requests.get(
-                "https://search.naver.com/search.naver",
-                params={"where": "blog", "query": kw, "sm": "tab_opt"},
-                timeout=min(10, _remaining()), headers={"User-Agent": UA},
-            )
-            resp.raise_for_status()
-            urls = re.findall(r'href="(https://blog\.naver\.com/[^"/]+/\d+)"', resp.text)
-            seen = set()
-            unique = []
-            for u in urls:
-                if u not in seen:
-                    seen.add(u)
-                    unique.append(u)
-                if len(unique) >= count:
-                    break
-            for i, url in enumerate(unique):
-                if _time.time() >= deadline:
-                    break
-                scraped = _scrape_naver_blog(url)
-                if scraped["body"]:
-                    headings = ""
-                    if scraped["headings"]:
-                        headings = " | 소제목: " + ", ".join(scraped["headings"][:5])
-                    crawled_texts.append(
-                        f"[네이버 {i+1}] {scraped['title']}{headings}\n"
-                        f"{scraped['body'][:1500]}"
-                    )
+            page = await pw_browser.new_page()
+            await page.goto(url, wait_until="domcontentloaded", timeout=timeout)
+            text = await page.evaluate("() => document.body ? document.body.innerText : ''")
+            await page.close()
+            return {"label": label, "text": text[:2000]}
         except Exception as e:
-            print(f"[크롤링-네이버] {kw}: {e}")
+            print(f"[크롤링-{label}] {url}: {e}")
+            return {"label": label, "text": ""}
 
-    def _crawl_site_search(kw, site_query, label):
-        """네이버 웹검색으로 특정 사이트 결과 크롤링."""
+    async def _crawl_naver_search(pw_browser, kw, where="blog"):
+        """네이버 검색 결과 페이지에서 블로그 URL 추출."""
         try:
-            resp = http_requests.get(
-                "https://search.naver.com/search.naver",
-                params={"where": "web", "query": f"{kw} {site_query}"},
-                timeout=min(10, _remaining()), headers={"User-Agent": UA},
-            )
-            resp.raise_for_status()
-            descs = re.findall(r'<a[^>]*class="[^"]*api_txt_lines[^"]*"[^>]*>(.*?)</a>', resp.text, re.DOTALL)
-            if descs:
-                desc_text = _strip_html(" ".join(descs[:3]))[:800]
-                crawled_texts.append(f"[{label}] {desc_text}")
+            page = await pw_browser.new_page()
+            url = f"https://search.naver.com/search.naver?where={where}&query={kw}"
+            await page.goto(url, wait_until="domcontentloaded", timeout=10000)
+            html = await page.content()
+            await page.close()
+            return html
         except Exception as e:
-            print(f"[크롤링-{label}] {kw}: {e}")
+            print(f"[크롤링-네이버검색] {kw}: {e}")
+            return ""
 
-    try:
+    async def _run_crawl():
+        from playwright.async_api import async_playwright
+
+        results = []
         _policy_kws = ["지원금", "지원", "신청", "혜택", "정책", "제도", "보조금", "캐시백", "난방비", "바우처", "수당", "감면"]
         is_policy = any(pk in keyword for pk in _policy_kws)
 
-        if category == "government" or (category == "living" and is_policy):
-            # 1. 지원금/정책형: 공식 사이트 우선 + 네이버 블로그 2개
-            _crawl_site_search(keyword, "site:gov.kr", "정부24")
-            _crawl_site_search(keyword, "site:bokjiro.go.kr", "복지로")
-            _crawl_naver_blogs(keyword, count=2)
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            ctx = await browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0",
+            )
 
-        elif category == "living":
-            # 2. 살림/고정지출형: 네이버 블로그 3개
-            _crawl_naver_blogs(keyword, count=3)
+            tasks = []
 
-        elif category == "travel":
-            # 3. 여행형: 공식 관광 사이트 + 네이버 블로그 2개
-            _crawl_site_search(keyword, "site:visitkorea.or.kr OR site:korean.visitkorea.or.kr", "한국관광공사")
-            _crawl_naver_blogs(keyword, count=2)
+            if category == "government" or (category == "living" and is_policy):
+                # 1. 지원금/정책형: 복지로 + 정부24 + 네이버 블로그 2개
+                tasks.append(_crawl_page(ctx, f"https://search.naver.com/search.naver?where=web&query={keyword} site:gov.kr", "정부24"))
+                tasks.append(_crawl_page(ctx, f"https://search.naver.com/search.naver?where=web&query={keyword} site:bokjiro.go.kr", "복지로"))
+                blog_count = 2
+            elif category == "living":
+                # 2. 살림/고정지출형: 네이버 블로그 3개
+                blog_count = 3
+            elif category == "travel":
+                # 3. 여행형: 한국관광공사 + 네이버 블로그 2개
+                tasks.append(_crawl_page(ctx, f"https://search.naver.com/search.naver?where=web&query={keyword} site:visitkorea.or.kr", "한국관광공사"))
+                blog_count = 2
+            else:
+                # 4. IT형: 웹검색 + 네이버 블로그 2개
+                tasks.append(_crawl_page(ctx, f"https://search.naver.com/search.naver?where=web&query={keyword}", "웹검색"))
+                blog_count = 2
 
-        else:
-            # 4. IT형: 공식 제품 사이트 + 네이버 블로그 2개
-            _crawl_site_search(keyword, "", "웹검색")
-            _crawl_naver_blogs(keyword, count=2)
+            # 네이버 블로그 검색 → URL 추출 → 개별 크롤링
+            search_html = await _crawl_naver_search(ctx, keyword)
+            blog_urls = re.findall(r'href="(https://blog\.naver\.com/[^"/]+/\d+)"', search_html)
+            seen = set()
+            unique_urls = []
+            for u in blog_urls:
+                if u not in seen:
+                    seen.add(u)
+                    unique_urls.append(u)
+                if len(unique_urls) >= blog_count:
+                    break
+
+            for i, url in enumerate(unique_urls):
+                tasks.append(_crawl_page(ctx, url, f"네이버 {i+1}"))
+
+            # 병렬 실행 (전체 30초 timeout)
+            done = await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), timeout=30)
+            results = [r for r in done if isinstance(r, dict) and r.get("text")]
+
+            await browser.close()
+
+        return results
+
+    try:
+        # Flask는 sync이므로 새 이벤트 루프에서 실행
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as pool:
+                    crawl_results = pool.submit(lambda: asyncio.run(_run_crawl())).result(timeout=35)
+            else:
+                crawl_results = loop.run_until_complete(_run_crawl())
+        except RuntimeError:
+            crawl_results = asyncio.run(_run_crawl())
+
+        if not crawl_results:
+            return ""
+
+        texts = []
+        for r in crawl_results:
+            texts.append(f"[{r['label']}]\n{r['text'][:1500]}")
+        return "\n\n".join(texts)
 
     except Exception as e:
         print(f"[자동 크롤링 실패] {keyword}: {e}")
-
-    return "\n\n".join(crawled_texts) if crawled_texts else ""
+        return ""
 
 
 @app.route("/api/crawl-competitors", methods=["POST"])
