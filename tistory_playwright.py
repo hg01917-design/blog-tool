@@ -483,12 +483,26 @@ def _type_body_html(page, body_html: str):
             time.sleep(0.3)
             continue
 
-        # ##AD## 처리: 서식 버튼 → 첫 번째 저장된 서식 선택
+        # ##AD## 처리: ins 태그 직접 삽입 (script 태그 금지)
         if stripped == '##AD##':
             try:
-                _insert_saved_format(page)
+                ad_html = (
+                    '<ins class="adsbygoogle" '
+                    'style="display:block;text-align:center;" '
+                    'data-ad-layout="in-article" '
+                    'data-ad-format="fluid" '
+                    'data-ad-client="ca-pub-1646757278810260" '
+                    'data-ad-slot="3141593954"></ins>'
+                )
+                page.evaluate("""(html) => {
+                    if (tinymce.activeEditor) {
+                        tinymce.activeEditor.execCommand('insertHTML', false, html);
+                    }
+                }""", ad_html)
+                time.sleep(0.5)
+                logger.info("애드센스 ins 태그 삽입 완료")
             except Exception as e:
-                logger.warning(f"애드센스 서식 삽입 실패: {e}")
+                logger.warning(f"애드센스 삽입 실패: {e}")
             continue
 
         # 일반 텍스트 타이핑
@@ -505,48 +519,6 @@ def _type_body_html(page, body_html: str):
     }""")
     time.sleep(0.5)
     logger.info("본문 타이핑 입력 완료 (TinyMCE iframe)")
-
-
-def _insert_saved_format(page):
-    """티스토리 에디터 상단 서식 버튼 → 첫 번째 저장된 서식을 삽입합니다."""
-    # 서식 버튼 클릭 (상단 툴바)
-    format_btn = page.query_selector('button[class*="btn_format"], button[title*="서식"]')
-    if not format_btn:
-        # JS로 서식 버튼 찾기
-        clicked = page.evaluate("""() => {
-            const buttons = document.querySelectorAll('button');
-            for (const btn of buttons) {
-                if (btn.textContent.includes('서식') || btn.title.includes('서식')) {
-                    btn.click();
-                    return true;
-                }
-            }
-            return false;
-        }""")
-        if not clicked:
-            logger.warning("서식 버튼을 찾을 수 없습니다.")
-            return
-    else:
-        format_btn.click()
-    time.sleep(1)
-
-    # 첫 번째 저장된 서식 선택
-    page.evaluate("""() => {
-        const items = document.querySelectorAll('[class*="format_item"], [class*="list_format"] li, [class*="saved"] li');
-        if (items.length > 0) {
-            items[0].click();
-            return true;
-        }
-        // fallback: 목록에서 첫 번째 클릭
-        const listItems = document.querySelectorAll('.layer_format li, .popup_format li');
-        if (listItems.length > 0) {
-            listItems[0].click();
-            return true;
-        }
-        return false;
-    }""")
-    time.sleep(1)
-    logger.info("저장된 서식(애드센스) 삽입 완료")
 
 
 def _type_tags(page, tags: list[str]):
