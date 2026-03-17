@@ -580,7 +580,7 @@ def _publish_pipeline(keyword_entry: dict) -> dict:
     # 2) 네이버 발행
     logger.info(f"[스케줄러] 네이버 발행 시작: {title}")
     try:
-        pub_result = naver_playwright.publish_to_naver(title, body, tags_list, blog_id=account_id or None)
+        pub_result = naver_playwright.publish_to_naver(title, body, tags_list, blog_id=account_id or None, entry_id=keyword_id)
     except Exception as e:
         error_msg = f"네이버 발행 예외: {str(e)}"
         logger.error(f"[스케줄러] {error_msg}")

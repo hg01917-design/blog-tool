@@ -124,8 +124,22 @@ def upload_cookies(cookies_json: str) -> dict:
         return {"success": False, "error": f"JSON 파싱 실패: {e}"}
 
 
+def _save_step_screenshot(page, entry_id: str, filename: str):
+    """발행 단계별 스크린샷을 저장합니다."""
+    if not entry_id or page is None:
+        return
+    try:
+        ss_dir = os.path.join(_APP_DIR, "screenshots", entry_id)
+        os.makedirs(ss_dir, exist_ok=True)
+        path = os.path.join(ss_dir, filename)
+        page.screenshot(path=path)
+        logger.info(f"단계 스크린샷 저장: {path}")
+    except Exception as e:
+        logger.warning(f"스크린샷 저장 실패 ({filename}): {e}")
+
+
 def publish_to_naver(title: str, body_html: str, tags: list[str],
-                     blog_id: str = None) -> dict:
+                     blog_id: str = None, entry_id: str = None) -> dict:
     """네이버 블로그에 글을 자동 발행합니다.
 
     발행 순서:
@@ -195,6 +209,7 @@ def publish_to_naver(title: str, body_html: str, tags: list[str],
                 steps.append({"step": "로그인 확인", "status": "failed"})
                 return {"success": False, "error": "쿠키가 만료되었습니다.", "steps": steps}
             steps.append({"step": "로그인 확인", "status": "success"})
+            _save_step_screenshot(page, entry_id, "01_login.png")
 
             # 3) 에디터 로드 + 팝업 닫기
             page.wait_for_selector(".se-content", timeout=15000)
@@ -220,6 +235,7 @@ def publish_to_naver(title: str, body_html: str, tags: list[str],
             time.sleep(0.5)
             page.keyboard.type(title, delay=random.randint(40, 120))
             steps.append({"step": "제목 입력", "status": "success"})
+            _save_step_screenshot(page, entry_id, "02_title.png")
             time.sleep(random.uniform(1.0, 3.0))
 
             # ── 5) 본문 영역으로 이동 ──
@@ -263,6 +279,7 @@ def publish_to_naver(title: str, body_html: str, tags: list[str],
             except Exception as e:
                 logger.warning(f"대표이미지 생성 실패: {e}")
                 steps.append({"step": "대표이미지", "status": "failed", "error": str(e)})
+            _save_step_screenshot(page, entry_id, "04_image.png")
 
             # ── 7) 섹션별 반복: 소제목 → 이미지 → 본문 ──
             for idx, section in enumerate(sections):
@@ -353,6 +370,7 @@ def publish_to_naver(title: str, body_html: str, tags: list[str],
                     time.sleep(random.uniform(1.0, 3.0))
 
             steps.append({"step": "본문 입력", "status": "success", "sections": len(sections)})
+            _save_step_screenshot(page, entry_id, "03_body.png")
 
             time.sleep(random.uniform(1.0, 3.0))
 
@@ -400,6 +418,7 @@ def publish_to_naver(title: str, body_html: str, tags: list[str],
             post_url = page.url
             _last_publish_time = time.time()
             steps.append({"step": "임시저장", "status": "success", "url": post_url})
+            _save_step_screenshot(page, entry_id, "05_done.png")
 
             return {"success": True, "post_url": post_url, "steps": steps}
 

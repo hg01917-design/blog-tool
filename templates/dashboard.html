@@ -464,6 +464,76 @@ tbody tr:hover { background: rgba(20,18,16,0.02); }
   padding: 12px 0;
 }
 
+/* SCREENSHOT MODAL */
+.ss-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.7);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 10000;
+  animation: fadeIn 0.2s ease;
+}
+@keyframes fadeIn { from { opacity:0 } to { opacity:1 } }
+.ss-modal {
+  background: #fff; border-radius: 14px;
+  max-width: 900px; width: 94%; max-height: 90vh;
+  display: flex; flex-direction: column;
+  box-shadow: 0 12px 48px rgba(0,0,0,0.25);
+}
+.ss-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 18px 24px; border-bottom: 1px solid rgba(20,18,16,0.08);
+}
+.ss-title { font-family: 'Bebas Neue', cursive; font-size: 20px; letter-spacing: 0.05em; }
+.ss-close {
+  background: none; border: none; font-size: 22px;
+  cursor: pointer; color: #9B958E; padding: 4px 8px;
+}
+.ss-close:hover { color: #141210; }
+.ss-body {
+  flex: 1; overflow: hidden; position: relative;
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+  min-height: 400px;
+}
+.ss-body img {
+  max-width: 100%; max-height: 60vh;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+}
+.ss-nav {
+  position: absolute; top: 50%; transform: translateY(-50%);
+  background: rgba(20,18,16,0.7); color: #fff;
+  border: none; border-radius: 50%;
+  width: 40px; height: 40px; font-size: 18px;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+}
+.ss-nav:hover { background: rgba(20,18,16,0.9); }
+.ss-nav.prev { left: 12px; }
+.ss-nav.next { right: 12px; }
+.ss-footer {
+  display: flex; justify-content: center; align-items: center; gap: 8px;
+  padding: 14px 24px; border-top: 1px solid rgba(20,18,16,0.08);
+}
+.ss-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: rgba(20,18,16,0.2); cursor: pointer;
+  transition: background 0.2s;
+}
+.ss-dot.active { background: #141210; }
+.ss-label {
+  font-size: 12px; color: #9B958E; margin-left: 12px;
+}
+.ss-empty {
+  text-align: center; color: #9B958E; font-size: 14px; padding: 40px 0;
+}
+.td-ss-btn {
+  padding: 3px 10px; border: 1px solid rgba(20,18,16,0.15);
+  border-radius: 4px; background: none; font-size: 11px;
+  font-weight: 600; cursor: pointer; color: #2563EB;
+  transition: background 0.15s;
+}
+.td-ss-btn:hover { background: rgba(37,99,235,0.08); }
+
 /* REFRESH INDICATOR */
 .refresh-dot {
   display: inline-block;
@@ -603,10 +673,11 @@ tbody tr:hover { background: rgba(20,18,16,0.02); }
             <th>상태</th>
             <th>제목</th>
             <th>링크</th>
+            <th>스크린샷</th>
           </tr>
         </thead>
         <tbody id="activity-body">
-          <tr><td colspan="6" style="text-align:center; color:#9B958E; padding:32px;">데이터를 불러오는 중...</td></tr>
+          <tr><td colspan="7" style="text-align:center; color:#9B958E; padding:32px;">데이터를 불러오는 중...</td></tr>
         </tbody>
       </table>
     </div>
@@ -694,7 +765,7 @@ async function fetchLogs() {
     document.getElementById('log-count').textContent = '최근 ' + logs.length + '건';
 
     if (logs.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:#9B958E; padding:32px;">발행 기록이 없습니다.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:#9B958E; padding:32px;">발행 기록이 없습니다.</td></tr>';
     } else {
       tbody.innerHTML = logs.map(function(log) {
         let badgeClass = 'badge-pending';
@@ -706,6 +777,10 @@ async function fetchLogs() {
         const linkCell = log.post_url
           ? '<a href="' + log.post_url + '" target="_blank" rel="noopener">보기</a>'
           : '-';
+        const kwId = log.keyword_id || '';
+        const ssCell = (log.status === 'success' && kwId)
+          ? '<button class="td-ss-btn" onclick="showScreenshots(\'' + kwId + '\')">보기</button>'
+          : '-';
 
         return '<tr>'
           + '<td class="td-time">' + ts + '</td>'
@@ -714,6 +789,7 @@ async function fetchLogs() {
           + '<td><span class="badge ' + badgeClass + '">' + badgeText + '</span></td>'
           + '<td class="td-title" title="' + (log.title || '') + '">' + (log.title || '-') + '</td>'
           + '<td class="td-link">' + linkCell + '</td>'
+          + '<td>' + ssCell + '</td>'
           + '</tr>';
       }).join('');
     }
@@ -1025,6 +1101,66 @@ function startStatusPoll(id, btn) {
       if (statusEl) { statusEl.textContent = '시간 초과 - 로그를 확인하세요'; statusEl.className = 'pub-status failed'; }
     }
   }, 300000);
+}
+
+// ---- Screenshot slide modal ----
+var _ssData = [];
+var _ssIdx = 0;
+var _ssLabels = {
+  '01_login.png': '로그인 완료',
+  '02_title.png': '제목 입력',
+  '03_body.png': '본문 입력',
+  '04_image.png': '이미지 삽입',
+  '05_done.png': '발행 완료',
+};
+
+async function showScreenshots(entryId) {
+  try {
+    var res = await fetch('/api/publish/' + entryId + '/screenshots');
+    var data = await res.json();
+    _ssData = data.screenshots || [];
+    _ssIdx = 0;
+    renderSSModal();
+  } catch (e) {
+    alert('스크린샷을 불러올 수 없습니다.');
+  }
+}
+
+function renderSSModal() {
+  var old = document.getElementById('ss-overlay');
+  if (old) old.remove();
+
+  var overlay = document.createElement('div');
+  overlay.id = 'ss-overlay';
+  overlay.className = 'ss-overlay';
+  overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.remove(); });
+
+  if (_ssData.length === 0) {
+    overlay.innerHTML = '<div class="ss-modal">'
+      + '<div class="ss-header"><span class="ss-title">Screenshots</span>'
+      + '<button class="ss-close" onclick="document.getElementById(\'ss-overlay\').remove()">&times;</button></div>'
+      + '<div class="ss-body"><div class="ss-empty">저장된 스크린샷이 없습니다.</div></div></div>';
+    document.body.appendChild(overlay);
+    return;
+  }
+
+  var item = _ssData[_ssIdx];
+  var label = _ssLabels[item.filename] || item.filename;
+  var dots = _ssData.map(function(s, i) {
+    return '<span class="ss-dot' + (i === _ssIdx ? ' active' : '') + '" onclick="_ssIdx=' + i + ';renderSSModal()"></span>';
+  }).join('');
+
+  overlay.innerHTML = '<div class="ss-modal">'
+    + '<div class="ss-header"><span class="ss-title">Screenshots</span>'
+    + '<button class="ss-close" onclick="document.getElementById(\'ss-overlay\').remove()">&times;</button></div>'
+    + '<div class="ss-body">'
+    + (_ssIdx > 0 ? '<button class="ss-nav prev" onclick="_ssIdx--;renderSSModal()">&#9664;</button>' : '')
+    + '<img src="data:image/png;base64,' + item.data + '" alt="' + label + '">'
+    + (_ssIdx < _ssData.length - 1 ? '<button class="ss-nav next" onclick="_ssIdx++;renderSSModal()">&#9654;</button>' : '')
+    + '</div>'
+    + '<div class="ss-footer">' + dots + '<span class="ss-label">' + (_ssIdx + 1) + '/' + _ssData.length + ' — ' + label + '</span></div>'
+    + '</div>';
+  document.body.appendChild(overlay);
 }
 
 // ---- Init & auto-refresh ----

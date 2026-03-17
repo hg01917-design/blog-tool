@@ -3004,6 +3004,33 @@ def api_accounts_status(entry_id):
 
 
 # ──────────────────────────────────────────────
+# 발행 스크린샷 API
+# ──────────────────────────────────────────────
+
+@app.route("/api/publish/<entry_id>/screenshots")
+@login_required
+def api_publish_screenshots(entry_id):
+    """발행 단계별 스크린샷 목록 + base64 반환."""
+    ss_dir = os.path.join(_APP_DIR, "screenshots", entry_id)
+    if not os.path.isdir(ss_dir):
+        return jsonify({"screenshots": []})
+
+    screenshots = []
+    for fname in sorted(os.listdir(ss_dir)):
+        if not fname.lower().endswith(".png"):
+            continue
+        fpath = os.path.join(ss_dir, fname)
+        with open(fpath, "rb") as f:
+            b64 = base64.b64encode(f.read()).decode("ascii")
+        screenshots.append({
+            "filename": fname,
+            "data": b64,
+        })
+
+    return jsonify({"screenshots": screenshots})
+
+
+# ──────────────────────────────────────────────
 # 스케줄러 초기화
 # ──────────────────────────────────────────────
 

@@ -22,3 +22,4 @@ gunicorn.ctl
 # Data
 data/
 naver_cookies.json
+screenshots/
