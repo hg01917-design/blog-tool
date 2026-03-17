@@ -255,7 +255,7 @@ def generate_article(keyword: str, platform: str = "naver",
         SEO_PROMPTS_GOVERNMENT, PLATFORM_NAMES,
         ADSENSE_TISTORY, ADSENSE_IT, GOVERNMENT_DISCLAIMER,
         _search_unsplash_images, _insert_adsense, _insert_adsense_3,
-        _generate_body_with_web_search,
+        _generate_body_with_web_search, _auto_crawl_for_prompt,
     )
 
     if not keyword:
@@ -306,6 +306,15 @@ def generate_article(keyword: str, platform: str = "naver",
             "- 독자에게 말하듯 친근한 톤을 유지합니다\n"
             "- '~했습니다' 보다는 '~했어요', '~더라고요' 체를 사용합니다\n"
             "- 구체적인 사용 상황과 맥락을 생생하게 묘사합니다"
+        )
+
+    # 글 생성 전 자동 크롤링 → 참고 자료를 system_prompt에 추가
+    crawled_info = _auto_crawl_for_prompt(keyword, category)
+    if crawled_info:
+        system_prompt += (
+            "\n\n[참고 자료 — 반드시 이 내용 기반으로 정확한 정보만 작성]\n"
+            f"{crawled_info}\n\n"
+            "위 참고 자료의 수치/날짜/조건을 우선 반영하되 그대로 복사하지 말고 자연스럽게 재구성하세요."
         )
 
     # 태그 수 및 사용자 프롬프트
