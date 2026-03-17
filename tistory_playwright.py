@@ -185,7 +185,7 @@ def publish_to_tistory(blog_id: str, title: str, body_html: str, tags: list[str]
             page = context.new_page()
 
             # 2) 글쓰기 페이지 이동
-            write_url = f"https://{blog_id}.tistory.com/manage/newpost"
+            write_url = f"https://{blog_id}.tistory.com/manage/post/new"
             page.goto(write_url, wait_until="domcontentloaded", timeout=30000)
             time.sleep(3)
 
@@ -199,26 +199,24 @@ def publish_to_tistory(blog_id: str, title: str, body_html: str, tags: list[str]
                 return {"success": False, "error": "쿠키가 만료되었습니다.", "steps": steps}
             steps.append({"step": "로그인 확인", "status": "success"})
 
+            # 3-1) 임시저장 복원 팝업 자동 닫기
+            _dismiss_restore_popup(page)
+
             # 4) 에디터 로드 대기
             _wait_for_editor(page)
             steps.append({"step": "에디터 로드", "status": "success"})
 
-            # 5) HTML 모드로 전환
-            _switch_to_html_mode(page)
-            steps.append({"step": "HTML 모드 전환", "status": "success"})
-            time.sleep(random.uniform(1.0, 3.0))
-
-            # 6) 제목 입력
+            # 5) 제목 입력
             _type_title(page, title)
             steps.append({"step": "제목 입력", "status": "success"})
             time.sleep(random.uniform(1.0, 3.0))
 
-            # 7) 본문 HTML 입력
+            # 6) 본문 HTML 입력 (TinyMCE)
             _type_body_html(page, body_html)
             steps.append({"step": "본문 입력", "status": "success"})
             time.sleep(random.uniform(1.0, 3.0))
 
-            # 8) 태그 입력
+            # 7) 태그 입력
             if tags:
                 try:
                     _type_tags(page, tags)
@@ -229,7 +227,7 @@ def publish_to_tistory(blog_id: str, title: str, body_html: str, tags: list[str]
 
             time.sleep(random.uniform(1.0, 3.0))
 
-            # 9) 임시저장
+            # 8) 임시저장
             _click_draft_save(page)
             time.sleep(3)
 
@@ -256,6 +254,36 @@ def publish_to_tistory(blog_id: str, title: str, body_html: str, tags: list[str]
 
 
 # ─── 내부 헬퍼 함수들 ───
+
+
+def _dismiss_restore_popup(page):
+    """임시저장 복원 팝업이 뜨면 '새 글 작성' 버튼 클릭으로 닫습니다."""
+    try:
+        time.sleep(1)
+        dismissed = page.evaluate("""() => {
+            // '새 글 작성' 또는 '새로 작성' 버튼 찾기
+            const buttons = document.querySelectorAll('button, a');
+            for (const btn of buttons) {
+                const text = btn.textContent.trim();
+                if (text.includes('새 글 작성') || text.includes('새로 작성')
+                    || text.includes('취소') || text.includes('아니오')) {
+                    btn.click();
+                    return text;
+                }
+            }
+            // 모달 닫기 버튼
+            const closeBtn = document.querySelector('.btn_cancel, .btn-close, [class*="close"]');
+            if (closeBtn) {
+                closeBtn.click();
+                return 'close_btn';
+            }
+            return null;
+        }""")
+        if dismissed:
+            logger.info(f"임시저장 복원 팝업 닫기: {dismissed}")
+            time.sleep(1)
+    except Exception:
+        pass
 
 
 def _wait_for_editor(page):
@@ -383,84 +411,64 @@ def _type_title(page, title: str):
 
 
 def _type_body_html(page, body_html: str):
-    """HTML 본문을 입력합니다."""
-    # HTML 모드 textarea/CodeMirror에 입력
-    html_editor_selectors = [
-        "#html-editor-area",
-        ".CodeMirror",
-        "textarea.html",
-        "#editor-textarea",
-        ".editor_body textarea",
-    ]
+    """TinyMCE iframe 안에서 타이핑 방식으로 본문을 입력합니다."""
+    import re as _re
 
-    # 1) CodeMirror 에디터 시도
+    # TinyMCE iframe이 로드될 때까지 대기
     try:
-        cm = page.query_selector(".CodeMirror")
-        if cm and cm.is_visible():
-            page.evaluate("""(html) => {
-                const cm = document.querySelector('.CodeMirror');
-                if (cm && cm.CodeMirror) {
-                    cm.CodeMirror.setValue(html);
-                    return true;
-                }
-                return false;
-            }""", body_html)
-            time.sleep(0.5)
-            logger.info("본문 입력 성공 (CodeMirror)")
-            return
-    except Exception:
-        pass
+        page.wait_for_selector("#editor-tistory_ifr", timeout=15000)
+    except PlaywrightTimeout:
+        raise RuntimeError("TinyMCE 에디터 iframe을 찾을 수 없습니다.")
 
-    # 2) textarea 시도
-    for sel in html_editor_selectors:
-        if sel == ".CodeMirror":
-            continue
-        try:
-            el = page.query_selector(sel)
-            if el and el.is_visible():
-                el.type(body_html, delay=random.randint(40, 120))
-                time.sleep(random.uniform(1.0, 3.0))
-                logger.info(f"본문 입력 성공: {sel}")
-                return
-        except Exception:
-            continue
+    # iframe 내부로 진입
+    iframe_el = page.query_selector("#editor-tistory_ifr")
+    if not iframe_el:
+        raise RuntimeError("TinyMCE iframe 요소를 찾을 수 없습니다.")
 
-    # 3) contenteditable 영역에 innerHTML 설정 (WYSIWYG 모드 fallback)
-    try:
-        result = page.evaluate("""(html) => {
-            // iframe 내부 에디터
-            const iframe = document.querySelector('#editor-iframe, iframe.editor');
-            if (iframe && iframe.contentDocument) {
-                const body = iframe.contentDocument.body;
-                if (body) {
-                    body.innerHTML = html;
-                    return 'iframe';
-                }
-            }
-            // contenteditable div
-            const editables = document.querySelectorAll('[contenteditable="true"]');
-            for (const el of editables) {
-                if (el.offsetHeight > 100) {
-                    el.innerHTML = html;
-                    return 'contenteditable';
-                }
-            }
-            // TinyMCE
-            if (window.tinymce && tinymce.activeEditor) {
-                tinymce.activeEditor.setContent(html);
-                return 'tinymce';
-            }
-            return null;
-        }""", body_html)
+    frame = iframe_el.content_frame()
+    if not frame:
+        raise RuntimeError("TinyMCE iframe 내부에 접근할 수 없습니다.")
 
-        if result:
-            time.sleep(0.5)
-            logger.info(f"본문 입력 성공 (JS fallback: {result})")
-            return
-    except Exception:
-        pass
+    # body[contenteditable] 클릭
+    body_el = frame.query_selector("body")
+    if not body_el:
+        raise RuntimeError("TinyMCE body 요소를 찾을 수 없습니다.")
+    body_el.click()
+    time.sleep(0.5)
 
-    raise RuntimeError("HTML 에디터 영역을 찾을 수 없습니다.")
+    # HTML → 평문 변환 후 타이핑
+    text = body_html
+    text = _re.sub(r'<br\s*/?>', '\n', text)
+    text = _re.sub(r'</(?:p|div|h[1-6]|li|tr)>', '\n', text)
+    text = _re.sub(r'<[^>]+>', '', text)
+    text = _re.sub(r'\n{3,}', '\n\n', text)
+    text = text.strip()
+
+    # 문단 단위 타이핑
+    paragraphs = _re.split(r'\n\s*\n', text)
+    for pi, para in enumerate(paragraphs):
+        lines = [l for l in para.split('\n') if l.strip()]
+        for li, line in enumerate(lines):
+            frame.page.keyboard.type(line.strip(), delay=random.randint(40, 120))
+            if li < len(lines) - 1:
+                frame.page.keyboard.press("Enter")
+                time.sleep(0.05)
+        if pi < len(paragraphs) - 1:
+            frame.page.keyboard.press("Enter")
+            time.sleep(0.05)
+            frame.page.keyboard.press("Enter")
+            time.sleep(0.05)
+        time.sleep(random.uniform(0.3, 0.8))
+
+    # TinyMCE에 변경사항 반영
+    page.evaluate("""() => {
+        if (window.tinymce && tinymce.activeEditor) {
+            tinymce.activeEditor.fire('change');
+            tinymce.activeEditor.save();
+        }
+    }""")
+    time.sleep(0.5)
+    logger.info("본문 타이핑 입력 완료 (TinyMCE iframe)")
 
 
 def _type_tags(page, tags: list[str]):
