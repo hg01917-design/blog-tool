@@ -55,7 +55,7 @@ def main():
     parser.add_argument("--server", default=DEFAULT_SERVER,
                         help=f"서버 URL (기본: {DEFAULT_SERVER})")
     parser.add_argument("--blog-domain", default="",
-                        help="커스텀 도메인 (예: welfer.baremi542.com)")
+                        help="커스텀 도메인 (예: welfare.baremi542.com)")
     args = parser.parse_args()
 
     account_id = args.account
