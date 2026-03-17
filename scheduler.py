@@ -580,7 +580,20 @@ def _publish_pipeline(keyword_entry: dict) -> dict:
     # 2) 네이버 발행
     logger.info(f"[스케줄러] 네이버 발행 시작: {title}")
     try:
-        pub_result = naver_playwright.publish_to_naver(title, body, tags_list, blog_id=account_id or None, entry_id=keyword_id)
+        # accounts.json에서 실제 blog_id 조회 (account_id와 다를 수 있음)
+        actual_blog_id = account_id
+        try:
+            accounts_path = os.path.join(_APP_DIR, "data", "accounts.json")
+            if os.path.exists(accounts_path):
+                with open(accounts_path, "r", encoding="utf-8") as af:
+                    accounts = json.load(af)
+                for acct in accounts.get("naver", []):
+                    if acct.get("id") == account_id:
+                        actual_blog_id = acct.get("blog_id", account_id)
+                        break
+        except Exception:
+            pass
+        pub_result = naver_playwright.publish_to_naver(title, body, tags_list, blog_id=actual_blog_id or None, entry_id=keyword_id)
     except Exception as e:
         error_msg = f"네이버 발행 예외: {str(e)}"
         logger.error(f"[스케줄러] {error_msg}")
