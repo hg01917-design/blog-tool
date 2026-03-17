@@ -167,6 +167,9 @@ def publish_to_tistory(blog_id: str, title: str, body_html: str, tags: list[str]
     if not h2_headings:
         h2_headings = [_re.sub(r'<[^>]+>', '', m).strip()
                        for m in _re.findall(r'<h2[^>]*>(.*?)</h2>', body_html, _re.DOTALL)]
+    if not h2_headings:
+        # 마크다운 ## 형식도 지원
+        h2_headings = _re.findall(r'^##\s+(.+)$', body_html, _re.MULTILINE)
     section_images = []
     for heading in h2_headings[:3]:  # 최대 3장
         try:
@@ -477,6 +480,9 @@ def _type_body_html(page, body_html: str, images: list = None):
     text = _re.sub(r'<br\s*/?>', '\n', text)
     text = _re.sub(r'</(?:p|div|li|tr)>', '\n', text)
     text = _re.sub(r'<[^>]+>', '', text)
+    # 마크다운 ## / ### 형식도 ##H2/H3## 마크업으로 변환
+    text = _re.sub(r'^###\s+(.+)$', r'##H3:\1##', text, flags=_re.MULTILINE)
+    text = _re.sub(r'^##\s+(.+)$', r'##H2:\1##', text, flags=_re.MULTILINE)
     text = _re.sub(r'\n{3,}', '\n\n', text)
     text = text.strip()
 
