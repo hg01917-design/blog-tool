@@ -1045,8 +1045,9 @@ def _translate_to_english(text: str) -> str:
             messages=[{
                 "role": "user",
                 "content": (
-                    f"Translate the following Korean text into a short English image prompt "
-                    f"suitable for AI image generation. Output ONLY the English prompt, nothing else.\n\n"
+                    f"Convert the following Korean text into 1-3 simple English keywords "
+                    f"for searching stock photos. Use common, generic terms (e.g. 'cherry blossom', "
+                    f"'parking lot', 'temple'). Output ONLY the keywords, nothing else.\n\n"
                     f"Text: {text}"
                 ),
             }],
@@ -1189,7 +1190,19 @@ def _fetch_unsplash_image_url(query: str) -> str:
 
     results = resp.json().get("results", [])
     if not results:
-        raise RuntimeError(f"Unsplash 검색 결과 없음: {query}")
+        # fallback: 첫 단어만으로 재검색
+        first_word = query.split()[0] if query.split() else query
+        if first_word != query:
+            resp2 = http_requests.get(
+                "https://api.unsplash.com/search/photos",
+                params={"query": first_word, "orientation": "landscape", "per_page": 5},
+                headers={"Authorization": f"Client-ID {access_key}"},
+                timeout=10,
+            )
+            if resp2.status_code == 200:
+                results = resp2.json().get("results", [])
+        if not results:
+            raise RuntimeError(f"Unsplash 검색 결과 없음: {query}")
 
     photo = results[0]
     url = photo["urls"]["raw"] + "?w=800&h=533&fit=crop&fm=webp&q=80"
