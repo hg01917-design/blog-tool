@@ -572,6 +572,17 @@ def _publish_pipeline(keyword_entry: dict) -> dict:
     tone = keyword_entry.get("tone", "informative")
     account_id = keyword_entry.get("account_id", "")
 
+    # 계정+플랫폼 조합으로 카테고리 강제 고정
+    _ACCOUNT_CAT_MAP = {
+        ("baremi542", "tistory"): "travel",
+        ("baremi542", "wordpress"): "government",
+        ("isag27511", "tistory"): "it",
+        ("daonna525", "naver"): "living",
+    }
+    fixed_cat = _ACCOUNT_CAT_MAP.get((account_id, platform))
+    if fixed_cat:
+        category = fixed_cat
+
     now_kst = datetime.now(KST).isoformat()
     log_entry = {
         "keyword_id": keyword_id,

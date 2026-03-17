@@ -1254,6 +1254,15 @@ def extract_facts():
         return jsonify({"error": f"팩트 추출 실패: {e.message}"}), 500
 
 
+# 계정+플랫폼 → 카테고리 고정 매핑
+ACCOUNT_CATEGORY_MAP = {
+    ("baremi542", "tistory"): "travel",
+    ("baremi542", "wordpress"): "government",
+    ("isag27511", "tistory"): "it",
+    ("daonna525", "naver"): "living",
+}
+
+
 @app.route("/generate", methods=["POST"])
 def generate():
     data = request.get_json()
@@ -1270,6 +1279,12 @@ def generate():
 
     if not keyword:
         return jsonify({"error": "키워드를 입력해주세요."}), 400
+
+    # 계정+플랫폼 조합으로 카테고리 강제 고정
+    account_id = data.get("account_id", "").strip()
+    fixed_category = ACCOUNT_CATEGORY_MAP.get((account_id, platform))
+    if fixed_category:
+        category = fixed_category
 
     # 카테고리별 프롬프트 및 플랫폼 제한
     if category == "travel":
