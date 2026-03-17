@@ -558,12 +558,13 @@ def _resolve_blog_id(account_id: str, platform: str, category: str = "") -> str:
 # ──────────────────────────────────────────────
 
 def _publish_pipeline(keyword_entry: dict) -> dict:
-    """단일 키워드에 대해 글 생성 → 네이버 발행 → 로그 기록을 수행합니다.
+    """단일 키워드에 대해 글 생성 → 플랫폼별 발행 → 로그 기록을 수행합니다.
 
     Returns:
         {"success": True/False, ...} 발행 결과
     """
     import naver_playwright
+    import tistory_playwright
 
     keyword_id = keyword_entry["id"]
     keyword = keyword_entry["keyword"]
@@ -624,13 +625,24 @@ def _publish_pipeline(keyword_entry: dict) -> dict:
     log_entry["article_title"] = title
     logger.info(f"[스케줄러] 글 생성 완료: {title}")
 
-    # 2) 네이버 발행
-    logger.info(f"[스케줄러] 네이버 발행 시작: {title}")
+    # 2) 플랫폼별 발행
+    actual_blog_id = _resolve_blog_id(account_id, platform, category)
+    logger.info(f"[스케줄러] {platform} 발행 시작: {title} (blog_id={actual_blog_id})")
+
     try:
-        actual_blog_id = _resolve_blog_id(account_id, platform, category)
-        pub_result = naver_playwright.publish_to_naver(title, body, tags_list, blog_id=actual_blog_id or None, entry_id=keyword_id)
+        if platform == "tistory":
+            pub_result = tistory_playwright.publish_to_tistory(
+                blog_id=actual_blog_id or account_id,
+                title=title, body_html=body, tags=tags_list,
+            )
+        else:
+            # 네이버 (기본)
+            pub_result = naver_playwright.publish_to_naver(
+                title, body, tags_list,
+                blog_id=actual_blog_id or None, entry_id=keyword_id,
+            )
     except Exception as e:
-        error_msg = f"네이버 발행 예외: {str(e)}"
+        error_msg = f"{platform} 발행 예외: {str(e)}"
         logger.error(f"[스케줄러] {error_msg}")
         _update_keyword_status(keyword_id, {
             "status": "failed",
@@ -642,8 +654,8 @@ def _publish_pipeline(keyword_entry: dict) -> dict:
         return {"success": False, "error": error_msg}
 
     if not pub_result.get("success"):
-        error_msg = pub_result.get("error", "네이버 발행 실패")
-        logger.error(f"[스케줄러] 네이버 발행 실패: {error_msg}")
+        error_msg = pub_result.get("error", f"{platform} 발행 실패")
+        logger.error(f"[스케줄러] {platform} 발행 실패: {error_msg}")
         _update_keyword_status(keyword_id, {
             "status": "failed",
             "error": error_msg,
@@ -654,7 +666,7 @@ def _publish_pipeline(keyword_entry: dict) -> dict:
         return {"success": False, "error": error_msg}
 
     post_url = pub_result.get("post_url", "")
-    logger.info(f"[스케줄러] 네이버 발행 성공: {post_url}")
+    logger.info(f"[스케줄러] {platform} 발행 성공: {post_url}")
 
     # 3) 상태 업데이트 및 로그 기록
     _update_keyword_status(keyword_id, {
