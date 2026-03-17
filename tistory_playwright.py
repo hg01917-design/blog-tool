@@ -409,7 +409,8 @@ def _type_title(page, title: str):
 
 
 def _type_body_html(page, body_html: str):
-    """TinyMCE iframe 안에서 타이핑 방식으로 본문을 입력합니다."""
+    """TinyMCE iframe 안에서 타이핑 방식으로 본문을 입력합니다.
+    ##H2:소제목##, ##H3:소제목##, ##AD## 마크업을 인식하여 처리합니다."""
     import re as _re
 
     # TinyMCE iframe이 로드될 때까지 대기
@@ -434,29 +435,66 @@ def _type_body_html(page, body_html: str):
     body_el.click()
     time.sleep(0.5)
 
-    # HTML → 평문 변환 후 타이핑
+    # HTML → 마크업 보존 평문 변환
     text = body_html
+    # ##H2/H3/AD## 마크업 보존, HTML 태그에서 H2/H3도 마크업으로 변환
+    text = _re.sub(r'<h2[^>]*>(.*?)</h2>', r'##H2:\1##', text, flags=_re.DOTALL)
+    text = _re.sub(r'<h3[^>]*>(.*?)</h3>', r'##H3:\1##', text, flags=_re.DOTALL)
     text = _re.sub(r'<br\s*/?>', '\n', text)
-    text = _re.sub(r'</(?:p|div|h[1-6]|li|tr)>', '\n', text)
+    text = _re.sub(r'</(?:p|div|li|tr)>', '\n', text)
     text = _re.sub(r'<[^>]+>', '', text)
     text = _re.sub(r'\n{3,}', '\n\n', text)
     text = text.strip()
 
-    # 문단 단위 타이핑
-    paragraphs = _re.split(r'\n\s*\n', text)
-    for pi, para in enumerate(paragraphs):
-        lines = [l for l in para.split('\n') if l.strip()]
-        for li, line in enumerate(lines):
-            frame.page.keyboard.type(line.strip(), delay=random.randint(40, 120))
-            if li < len(lines) - 1:
-                frame.page.keyboard.press("Enter")
-                time.sleep(0.05)
-        if pi < len(paragraphs) - 1:
+    # 줄 단위로 처리
+    lines = text.split('\n')
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
             frame.page.keyboard.press("Enter")
             time.sleep(0.05)
+            continue
+
+        # ##H2:소제목## 처리
+        h2_match = _re.match(r'##H2:(.+?)##', stripped)
+        if h2_match:
+            heading_text = h2_match.group(1).strip()
+            # TinyMCE 서식 변경: H2
+            page.evaluate("() => { if(tinymce.activeEditor) tinymce.activeEditor.execCommand('FormatBlock', false, 'h2'); }")
+            time.sleep(0.3)
+            frame.page.keyboard.type(heading_text, delay=random.randint(40, 120))
             frame.page.keyboard.press("Enter")
-            time.sleep(0.05)
-        time.sleep(random.uniform(0.3, 0.8))
+            time.sleep(0.3)
+            # 본문(p)으로 복귀
+            page.evaluate("() => { if(tinymce.activeEditor) tinymce.activeEditor.execCommand('FormatBlock', false, 'p'); }")
+            time.sleep(0.3)
+            continue
+
+        # ##H3:소제목## 처리
+        h3_match = _re.match(r'##H3:(.+?)##', stripped)
+        if h3_match:
+            heading_text = h3_match.group(1).strip()
+            page.evaluate("() => { if(tinymce.activeEditor) tinymce.activeEditor.execCommand('FormatBlock', false, 'h3'); }")
+            time.sleep(0.3)
+            frame.page.keyboard.type(heading_text, delay=random.randint(40, 120))
+            frame.page.keyboard.press("Enter")
+            time.sleep(0.3)
+            page.evaluate("() => { if(tinymce.activeEditor) tinymce.activeEditor.execCommand('FormatBlock', false, 'p'); }")
+            time.sleep(0.3)
+            continue
+
+        # ##AD## 처리: 서식 버튼 → 첫 번째 저장된 서식 선택
+        if stripped == '##AD##':
+            try:
+                _insert_saved_format(page)
+            except Exception as e:
+                logger.warning(f"애드센스 서식 삽입 실패: {e}")
+            continue
+
+        # 일반 텍스트 타이핑
+        frame.page.keyboard.type(stripped, delay=random.randint(40, 120))
+        frame.page.keyboard.press("Enter")
+        time.sleep(random.uniform(0.1, 0.3))
 
     # TinyMCE에 변경사항 반영
     page.evaluate("""() => {
@@ -467,6 +505,48 @@ def _type_body_html(page, body_html: str):
     }""")
     time.sleep(0.5)
     logger.info("본문 타이핑 입력 완료 (TinyMCE iframe)")
+
+
+def _insert_saved_format(page):
+    """티스토리 에디터 상단 서식 버튼 → 첫 번째 저장된 서식을 삽입합니다."""
+    # 서식 버튼 클릭 (상단 툴바)
+    format_btn = page.query_selector('button[class*="btn_format"], button[title*="서식"]')
+    if not format_btn:
+        # JS로 서식 버튼 찾기
+        clicked = page.evaluate("""() => {
+            const buttons = document.querySelectorAll('button');
+            for (const btn of buttons) {
+                if (btn.textContent.includes('서식') || btn.title.includes('서식')) {
+                    btn.click();
+                    return true;
+                }
+            }
+            return false;
+        }""")
+        if not clicked:
+            logger.warning("서식 버튼을 찾을 수 없습니다.")
+            return
+    else:
+        format_btn.click()
+    time.sleep(1)
+
+    # 첫 번째 저장된 서식 선택
+    page.evaluate("""() => {
+        const items = document.querySelectorAll('[class*="format_item"], [class*="list_format"] li, [class*="saved"] li');
+        if (items.length > 0) {
+            items[0].click();
+            return true;
+        }
+        // fallback: 목록에서 첫 번째 클릭
+        const listItems = document.querySelectorAll('.layer_format li, .popup_format li');
+        if (listItems.length > 0) {
+            listItems[0].click();
+            return true;
+        }
+        return false;
+    }""")
+    time.sleep(1)
+    logger.info("저장된 서식(애드센스) 삽입 완료")
 
 
 def _type_tags(page, tags: list[str]):
