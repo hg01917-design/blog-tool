@@ -131,7 +131,7 @@ def upload_cookies(blog_id: str, cookies_json: str) -> dict:
 
 
 def publish_to_tistory(blog_id: str, title: str, body_html: str, tags: list[str],
-                       account_id: str = None) -> dict:
+                       account_id: str = None, category: str = "it") -> dict:
     """티스토리 블로그에 글을 임시저장합니다.
 
     Args:
@@ -140,6 +140,7 @@ def publish_to_tistory(blog_id: str, title: str, body_html: str, tags: list[str]
         body_html: HTML 본문 (adsense 코드 포함)
         tags: 태그 리스트
         account_id: 쿠키 저장에 사용된 계정 ID (없으면 blog_id 사용)
+        category: 글 카테고리 (it, travel 등) - 썸네일 생성에 사용
     """
     global _last_publish_time
 
@@ -162,8 +163,18 @@ def publish_to_tistory(blog_id: str, title: str, body_html: str, tags: list[str]
     tmp_files = []  # 임시 이미지 파일 추적 (cleanup용)
     cookie_path = _get_cookie_path(cookie_id)
 
-    # ── Unsplash 이미지: 본문에서 H2 소제목 추출 → 소제목별 이미지 검색 ──
+    # ── Imagen 썸네일 생성 (제목 기반, 카테고리별 프롬프트) ──
     import re as _re
+    thumbnail_path = None
+    try:
+        thumbnail_path = _generate_imagen_thumbnail(title, category)
+        tmp_files.append(thumbnail_path)
+        steps.append({"step": "Imagen 썸네일 생성", "status": "success"})
+    except Exception as e:
+        logger.warning(f"Imagen 썸네일 생성 실패: {e}")
+        steps.append({"step": "Imagen 썸네일 생성", "status": "failed", "error": str(e)})
+
+    # ── Unsplash 이미지: 본문에서 H2 소제목 추출 → 소제목별 이미지 검색 ──
     h2_headings = _re.findall(r'##H2:(.+?)##', body_html)
     if not h2_headings:
         h2_headings = [_re.sub(r'<[^>]+>', '', m).strip()
@@ -240,6 +251,16 @@ def publish_to_tistory(blog_id: str, title: str, body_html: str, tags: list[str]
                           "images": len(section_image_urls)})
             time.sleep(random.uniform(1.0, 3.0))
 
+            # 6-1) Imagen 썸네일을 본문 맨 앞에 삽입 + 대표이미지 설정
+            if thumbnail_path:
+                try:
+                    _insert_thumbnail_and_set_representative(page, thumbnail_path, blog_id)
+                    steps.append({"step": "썸네일 삽입 + 대표이미지", "status": "success"})
+                except Exception as e:
+                    logger.warning(f"썸네일 삽입 실패: {e}")
+                    steps.append({"step": "썸네일 삽입 + 대표이미지", "status": "failed", "error": str(e)})
+                time.sleep(random.uniform(1.0, 2.0))
+
             # 7) 태그 입력
             if tags:
                 try:
@@ -284,15 +305,17 @@ def publish_to_tistory(blog_id: str, title: str, body_html: str, tags: list[str]
             browser.close()
 
 
-def edit_latest_draft(blog_id: str, account_id: str = None) -> dict:
+def edit_latest_draft(blog_id: str, account_id: str = None, category: str = "it") -> dict:
     """기존 임시저장 글을 열어 base64 이미지를 Unsplash URL로 교체하고
-    애드센스를 삽입한 뒤 재저장합니다.
+    Imagen 썸네일을 생성/삽입하고 애드센스를 삽입한 뒤 재저장합니다.
 
     흐름:
       1. /manage/posts 에서 최신 임시저장 글 클릭
-      2. 에디터 iframe에서 base64 img → Unsplash URL 교체
-      3. ##AD## 텍스트가 있으면 애드센스 DOM 삽입
-      4. 임시저장
+      2. Imagen 썸네일 생성 + 본문 맨 앞 삽입
+      3. 에디터 iframe에서 base64 img → Unsplash URL 교체
+      4. ##AD## 텍스트가 있으면 애드센스 DOM 삽입
+      5. 대표이미지 설정
+      6. 임시저장
     """
     cookie_id = account_id or blog_id
     if not cookies_exist(cookie_id):
@@ -408,6 +431,21 @@ def edit_latest_draft(blog_id: str, account_id: str = None) -> dict:
                 return Array.from(h2s).map(h => h.innerText.trim()).filter(t => t.length > 0);
             }""")
             logger.info(f"H2 소제목 {len(h2_texts)}개: {h2_texts}")
+
+            # ── 3-1) Imagen 썸네일 생성 (제목 기반) ──
+            thumbnail_path = None
+            try:
+                # draft_loaded에서 제목 추출 (또는 에디터 제목 필드에서)
+                draft_title = page.evaluate("""() => {
+                    const titleInput = document.querySelector('#post-title-inp');
+                    return titleInput ? titleInput.value : '';
+                }""") or draft_loaded or ""
+                if draft_title:
+                    thumbnail_path = _generate_imagen_thumbnail(draft_title, category)
+                    steps.append({"step": "Imagen 썸네일 생성", "status": "success"})
+            except Exception as e:
+                logger.warning(f"Imagen 썸네일 생성 실패: {e}")
+                steps.append({"step": "Imagen 썸네일 생성", "status": "failed", "error": str(e)})
 
             # ── 4) Unsplash URL 미리 준비 (base64 이미지 교체용) ──
             # TinyMCE getContent()에서 base64 이미지 개수 확인
@@ -534,11 +572,32 @@ def edit_latest_draft(blog_id: str, account_id: str = None) -> dict:
                         ad_count += 1
                         break
 
+                # 5-5) Imagen 썸네일을 본문 맨 앞에 삽입
+                thumb_inserted = False
+                if thumbnail_path:
+                    try:
+                        with open(thumbnail_path, "rb") as f:
+                            thumb_bytes = f.read()
+                        thumb_b64 = base64.b64encode(thumb_bytes).decode("ascii")
+                        thumb_html = (
+                            '<p style="text-align:center;">'
+                            f'<img src="data:image/webp;base64,{thumb_b64}" '
+                            'style="max-width:100%;height:auto;border-radius:8px;" '
+                            'alt="썸네일" />'
+                            '</p><p>&nbsp;</p>'
+                        )
+                        html = thumb_html + html
+                        thumb_inserted = True
+                        logger.info("Imagen 썸네일 HTML 맨 앞 삽입")
+                    except Exception as e:
+                        logger.warning(f"썸네일 HTML 삽입 실패: {e}")
+
                 # setContent
                 page.evaluate("(h) => { tinymce.activeEditor.setContent(h); }", html)
 
-                result_info = {"replaced": replaced_count, "ads": ad_count, "tables": table_converted}
-                logger.info(f"이미지 교체 {replaced_count}개, 애드센스 삽입 {ad_count}개, 표 변환 {table_converted}개")
+                result_info = {"replaced": replaced_count, "ads": ad_count, "tables": table_converted,
+                               "thumbnail": thumb_inserted}
+                logger.info(f"이미지 교체 {replaced_count}개, 애드센스 삽입 {ad_count}개, 표 변환 {table_converted}개, 썸네일 {thumb_inserted}")
                 steps.append({"step": "이미지 교체 + 애드센스 + 표", "status": "success",
                               "replaced": replaced_count, "ads": ad_count, "tables": table_converted})
 
@@ -550,6 +609,21 @@ def edit_latest_draft(blog_id: str, account_id: str = None) -> dict:
                 }
             }""")
             time.sleep(1)
+
+            # ── 5-6) 대표이미지 설정 ──
+            if thumbnail_path:
+                try:
+                    _set_tistory_representative_image(page)
+                    steps.append({"step": "대표이미지 설정", "status": "success"})
+                except Exception as e:
+                    logger.warning(f"대표이미지 설정 실패: {e}")
+                    steps.append({"step": "대표이미지 설정", "status": "failed", "error": str(e)})
+                # 임시 파일 정리
+                try:
+                    if os.path.exists(thumbnail_path):
+                        os.unlink(thumbnail_path)
+                except Exception:
+                    pass
 
             # ── 6) 임시저장 ──
             _click_draft_save(page)
@@ -589,6 +663,130 @@ def edit_latest_draft(blog_id: str, account_id: str = None) -> dict:
 
 
 # ─── 내부 헬퍼 함수들 ───
+
+
+def _insert_thumbnail_and_set_representative(page, thumbnail_path: str, blog_id: str):
+    """Imagen 썸네일을 본문 맨 앞에 삽입하고 대표이미지로 설정합니다.
+
+    1. 이미지 파일을 base64로 읽어 TinyMCE insertContent로 맨 앞에 삽입
+    2. 티스토리 대표이미지 설정 UI 클릭
+    """
+    # 1) 이미지를 base64로 변환하여 TinyMCE 본문 맨 앞에 삽입
+    with open(thumbnail_path, "rb") as f:
+        img_bytes = f.read()
+    img_b64 = base64.b64encode(img_bytes).decode("ascii")
+
+    # TinyMCE에서 본문 맨 앞에 썸네일 이미지 삽입
+    page.evaluate("""(b64) => {
+        const editor = tinymce.activeEditor;
+        if (!editor) return;
+        const currentContent = editor.getContent();
+        const thumbHtml = '<p style="text-align:center;">' +
+            '<img src="data:image/webp;base64,' + b64 + '" ' +
+            'style="max-width:100%;height:auto;border-radius:8px;" ' +
+            'alt="썸네일" />' +
+            '</p><p>&nbsp;</p>';
+        editor.setContent(thumbHtml + currentContent);
+    }""", img_b64)
+    logger.info("썸네일 이미지 본문 맨 앞에 삽입 완료")
+    time.sleep(1)
+
+    # 2) 대표이미지 설정: 티스토리 에디터 우측 패널에서 대표이미지 버튼 클릭
+    try:
+        _set_tistory_representative_image(page)
+    except Exception as e:
+        logger.warning(f"대표이미지 설정 실패 (본문 첫 이미지로 자동 설정됨): {e}")
+
+
+def _set_tistory_representative_image(page):
+    """티스토리 에디터에서 대표이미지를 설정합니다.
+
+    티스토리 에디터에서 본문 첫 번째 이미지를 자동으로 대표이미지로 설정.
+    1. 우측 패널의 '대표이미지' 영역 클릭
+    2. 첫 번째 이미지 선택
+    3. 적용 버튼 클릭
+    """
+    # 방법 1: 대표이미지 설정 버튼 찾기 (여러 셀렉터 시도)
+    selectors = [
+        'button.btn_thumb',                    # 대표이미지 설정 버튼
+        '.thumb_set button',                   # 썸네일 설정 영역
+        'button[class*="thumb"]',              # thumb 관련 버튼
+        '.representativeImage button',         # 대표이미지 영역
+        '#sidebar button.btn_set',             # 사이드바 설정 버튼
+    ]
+
+    thumb_btn = None
+    for sel in selectors:
+        thumb_btn = page.query_selector(sel)
+        if thumb_btn:
+            logger.info(f"대표이미지 버튼 발견: {sel}")
+            break
+
+    if not thumb_btn:
+        # 방법 2: 텍스트로 버튼 찾기
+        thumb_btn = page.evaluate("""() => {
+            const btns = document.querySelectorAll('button, a, div[role="button"]');
+            for (const btn of btns) {
+                const text = btn.textContent.trim();
+                if (text.includes('대표') || text.includes('썸네일') || text.includes('thumbnail')) {
+                    btn.click();
+                    return true;
+                }
+            }
+            return false;
+        }""")
+        if thumb_btn:
+            logger.info("대표이미지 버튼 텍스트로 클릭 완료")
+            time.sleep(1)
+
+            # 첫 번째 이미지 선택
+            page.evaluate("""() => {
+                // 모달 또는 패널에서 첫 이미지 클릭
+                const imgs = document.querySelectorAll('.thumb_list img, .layer_thumb img, [class*="thumb"] img');
+                if (imgs.length > 0) {
+                    imgs[0].click();
+                    return true;
+                }
+                return false;
+            }""")
+            time.sleep(0.5)
+
+            # 적용/확인 버튼
+            page.evaluate("""() => {
+                const btns = document.querySelectorAll('button');
+                for (const btn of btns) {
+                    const text = btn.textContent.trim();
+                    if (text === '적용' || text === '확인' || text === '선택') {
+                        btn.click();
+                        return true;
+                    }
+                }
+                return false;
+            }""")
+            return
+
+    if thumb_btn and not isinstance(thumb_btn, bool):
+        thumb_btn.click()
+        time.sleep(1)
+        # 첫 번째 이미지 자동 선택 + 적용
+        page.evaluate("""() => {
+            const imgs = document.querySelectorAll('.thumb_list img, .layer_thumb img, [class*="thumb"] img');
+            if (imgs.length > 0) imgs[0].click();
+        }""")
+        time.sleep(0.5)
+        page.evaluate("""() => {
+            const btns = document.querySelectorAll('button');
+            for (const btn of btns) {
+                const text = btn.textContent.trim();
+                if (text === '적용' || text === '확인' || text === '선택') {
+                    btn.click();
+                    return;
+                }
+            }
+        }""")
+        logger.info("대표이미지 설정 완료")
+    else:
+        logger.info("대표이미지 버튼 없음 — 본문 첫 이미지가 자동 대표이미지로 사용됨")
 
 
 def _dismiss_restore_popup(page):
@@ -1073,7 +1271,7 @@ def _click_draft_save(page):
 
 
 def _translate_to_english(text: str) -> str:
-    """한국어 텍스트를 영어 이미지 프롬프트로 변환합니다."""
+    """한국어 텍스트를 영어 스톡사진 검색 키워드로 변환합니다."""
     try:
         import anthropic
         client = anthropic.Anthropic()
@@ -1083,17 +1281,84 @@ def _translate_to_english(text: str) -> str:
             messages=[{
                 "role": "user",
                 "content": (
-                    f"Convert the following Korean text into 1-3 simple English keywords "
-                    f"for searching stock photos. Use common, generic terms (e.g. 'cherry blossom', "
-                    f"'parking lot', 'temple'). Output ONLY the keywords, nothing else.\n\n"
+                    f"You are a stock photo search keyword generator.\n"
+                    f"Given a Korean heading from a blog post, extract the CORE CONCEPT "
+                    f"and convert it to 1-3 simple English keywords for stock photo search.\n\n"
+                    f"Rules:\n"
+                    f"- IGNORE proper nouns, brand names, and software names "
+                    f"(e.g. 파워토이, 팬시존, 갤럭시, 카카오톡, 엑셀, 크롬)\n"
+                    f"- Focus on the FUNCTIONAL meaning or activity described\n"
+                    f"- Use generic, visual terms that stock photo sites understand\n"
+                    f"- Examples:\n"
+                    f"  '파워토이 팬시존 설치 방법' → 'computer screen layout'\n"
+                    f"  '카카오톡 채팅 백업 방법' → 'smartphone messaging'\n"
+                    f"  '엑셀 함수 정리' → 'spreadsheet data'\n"
+                    f"  '갤럭시 배터리 절약 팁' → 'smartphone battery'\n"
+                    f"  '화면 분할 프로그램 추천' → 'dual monitor workspace'\n"
+                    f"  '벚꽃 명소 추천' → 'cherry blossom'\n"
+                    f"- Output ONLY the keywords, nothing else.\n\n"
                     f"Text: {text}"
                 ),
             }],
         )
-        return resp.content[0].text.strip()
+        result = resp.content[0].text.strip()
+        logger.info(f"이미지 키워드 번역: '{text}' → '{result}'")
+        return result
     except Exception as e:
         logger.warning(f"번역 실패, 원문 사용: {e}")
         return text
+
+
+def _generate_imagen_thumbnail(title: str, category: str = "it") -> str:
+    """Gemini Imagen으로 썸네일 이미지(800x800) 생성 → temp 파일 경로 반환."""
+    api_key = os.environ.get("GOOGLE_API_KEY", "")
+    if not api_key:
+        raise RuntimeError("GOOGLE_API_KEY가 설정되지 않았습니다.")
+
+    # 제목 → 영문 키워드
+    en_query = _translate_to_english(title)
+
+    # 카테고리별 프롬프트
+    if category in ("it",):
+        prompt = f"clean minimal tech illustration, {en_query}, flat design, soft gradient background, no text, no letters, no words"
+    elif category in ("travel", "여행"):
+        prompt = f"beautiful travel photo style, {en_query}, natural light, vibrant colors, no text, no letters, no words"
+    elif category in ("food", "음식"):
+        prompt = f"delicious food photography, {en_query}, warm lighting, close-up, no text, no letters, no words"
+    else:
+        prompt = f"clean professional blog thumbnail, {en_query}, bright colors, modern design, no text, no letters, no words"
+
+    logger.info(f"[Imagen 썸네일] 프롬프트: {prompt}")
+
+    from google import genai
+    from google.genai import types as genai_types
+
+    client = genai.Client(api_key=api_key)
+    response = client.models.generate_content(
+        model="gemini-2.0-flash-preview-image-generation",
+        contents=prompt,
+        config=genai_types.GenerateContentConfig(
+            response_modalities=["IMAGE", "TEXT"],
+        ),
+    )
+
+    # 응답에서 이미지 추출
+    for part in response.candidates[0].content.parts:
+        if part.inline_data is not None:
+            img_bytes = part.inline_data.data
+            from PIL import Image
+            import io
+
+            img = Image.open(io.BytesIO(img_bytes))
+            img = img.resize((800, 800), Image.LANCZOS)
+
+            tmp = tempfile.NamedTemporaryFile(suffix=".webp", delete=False)
+            img.convert("RGB").save(tmp, format="WEBP", quality=85)
+            tmp.close()
+            logger.info(f"[Imagen 썸네일] 생성 완료: {tmp.name}")
+            return tmp.name
+
+    raise RuntimeError("Gemini 이미지 생성 결과 없음")
 
 
 def _fetch_pexels_image(query: str, width: int = 800, height: int = 533) -> str:

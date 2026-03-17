@@ -2441,6 +2441,7 @@ def publish_tistory():
     title = data.get("title", "")
     body = data.get("body", "")
     tags_str = data.get("tags", "")
+    account_id = data.get("account_id", "")
 
     if not blog_id:
         return jsonify({"error": "blog_id가 필요합니다."}), 400
@@ -2452,9 +2453,13 @@ def publish_tistory():
     if not tistory_playwright.cookies_exist(blog_id):
         return jsonify({"error": f"{blog_id} 쿠키가 없습니다. 먼저 로그인해주세요."}), 400
 
+    # 카테고리 결정 (계정+플랫폼 매핑 우선)
+    category = ACCOUNT_CATEGORY_MAP.get((account_id, "tistory"), "it") if account_id else "it"
+
     tag_list = [t.strip() for t in tags_str.split(",") if t.strip()][:10]
 
-    result = tistory_playwright.publish_to_tistory(blog_id, title, body, tag_list)
+    result = tistory_playwright.publish_to_tistory(blog_id, title, body, tag_list,
+                                                    account_id=account_id, category=category)
 
     if result.get("success"):
         return jsonify(result)
