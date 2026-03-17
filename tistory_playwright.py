@@ -284,6 +284,237 @@ def publish_to_tistory(blog_id: str, title: str, body_html: str, tags: list[str]
             browser.close()
 
 
+def edit_latest_draft(blog_id: str, account_id: str = None) -> dict:
+    """기존 임시저장 글을 열어 base64 이미지를 Unsplash URL로 교체하고
+    애드센스를 삽입한 뒤 재저장합니다.
+
+    흐름:
+      1. /manage/posts 에서 최신 임시저장 글 클릭
+      2. 에디터 iframe에서 base64 img → Unsplash URL 교체
+      3. ##AD## 텍스트가 있으면 애드센스 DOM 삽입
+      4. 임시저장
+    """
+    cookie_id = account_id or blog_id
+    if not cookies_exist(cookie_id):
+        return {"success": False, "error": "쿠키가 없습니다."}
+
+    cookie_path = _get_cookie_path(cookie_id)
+    steps = []
+
+    base_url = (f"https://{blog_id}" if "." in blog_id and not blog_id.endswith(".tistory.com")
+                else f"https://{blog_id}.tistory.com")
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        context = browser.new_context(
+            viewport={"width": 1280, "height": 900},
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/131.0.0.0 Safari/537.36"
+            ),
+        )
+        page = None
+        try:
+            with open(cookie_path, "r", encoding="utf-8") as f:
+                context.add_cookies(json.load(f))
+
+            page = context.new_page()
+
+            # ── 1) 글 관리 → 최신 임시저장 글 열기 ──
+            page.goto(f"{base_url}/manage/posts", wait_until="domcontentloaded", timeout=30000)
+            time.sleep(3)
+
+            if "accounts.kakao.com" in page.url or "auth/login" in page.url:
+                return {"success": False, "error": "쿠키 만료", "steps": steps}
+            steps.append({"step": "글 관리 접속", "status": "success"})
+
+            # 최신 임시저장 글 링크 찾기
+            draft_url = page.evaluate("""() => {
+                // 임시저장 상태 글 찾기
+                const rows = document.querySelectorAll('#content .post_list tr, #content .list_post li, #content table tbody tr');
+                for (const row of rows) {
+                    const status = row.querySelector('.status, .state, .ico_draft');
+                    const isDraft = status && (status.textContent.includes('임시') || status.textContent.includes('비공개'));
+                    const link = row.querySelector('a[href*="/manage/newpost/"], a[href*="/manage/post/"]');
+                    if (link) {
+                        if (isDraft || !status) return link.href;
+                    }
+                }
+                // fallback: 첫 번째 편집 링크
+                const firstLink = document.querySelector('a[href*="/manage/newpost/"], a[href*="/manage/post/"]');
+                return firstLink ? firstLink.href : null;
+            }""")
+
+            if not draft_url:
+                _save_error_screenshot(page, prefix="edit_draft_nopost")
+                return {"success": False, "error": "임시저장 글을 찾을 수 없습니다.", "steps": steps}
+
+            logger.info(f"임시저장 글 열기: {draft_url}")
+            page.goto(draft_url, wait_until="domcontentloaded", timeout=30000)
+            time.sleep(4)
+
+            # 복원 팝업 닫기 (이어서 작성)
+            page.evaluate("""() => {
+                const btns = document.querySelectorAll('button, a');
+                for (const b of btns) {
+                    const t = b.textContent.trim();
+                    if (t.includes('이어서 작성') || t.includes('복원') || t === '확인' || t === '예') {
+                        b.click(); return t;
+                    }
+                }
+                return null;
+            }""")
+            time.sleep(2)
+            steps.append({"step": "글 열기", "status": "success", "url": draft_url})
+
+            # ── 2) 에디터 iframe 접근 ──
+            try:
+                page.wait_for_selector("#editor-tistory_ifr", timeout=15000)
+            except PlaywrightTimeout:
+                _save_error_screenshot(page, prefix="edit_draft_noeditor")
+                return {"success": False, "error": "에디터 iframe 없음", "steps": steps}
+
+            iframe_el = page.query_selector("#editor-tistory_ifr")
+            frame = iframe_el.content_frame() if iframe_el else None
+            if not frame:
+                return {"success": False, "error": "iframe 접근 불가", "steps": steps}
+
+            # ── 3) base64 이미지 → Unsplash URL 교체 ──
+            # 먼저 H2 소제목 텍스트 추출 (이미지 검색 키워드용)
+            h2_texts = frame.evaluate("""() => {
+                const h2s = document.querySelectorAll('h2');
+                return Array.from(h2s).map(h => h.innerText.trim()).filter(t => t.length > 0);
+            }""")
+            logger.info(f"H2 소제목 {len(h2_texts)}개: {h2_texts}")
+
+            # base64 이미지 개수 확인
+            b64_count = frame.evaluate("""() => {
+                const imgs = document.querySelectorAll('img[src^="data:image"]');
+                return imgs.length;
+            }""")
+            logger.info(f"base64 이미지 {b64_count}개 발견")
+
+            replaced = 0
+            if b64_count > 0:
+                for i in range(b64_count):
+                    query_text = h2_texts[i] if i < len(h2_texts) else (h2_texts[0] if h2_texts else "nature landscape")
+                    try:
+                        en_query = _translate_to_english(query_text)
+                        unsplash_url = _fetch_unsplash_image_url(en_query)
+
+                        # iframe 내에서 i번째 base64 이미지의 src를 교체
+                        frame.evaluate("""([idx, newUrl]) => {
+                            const imgs = document.querySelectorAll('img[src^="data:image"]');
+                            if (imgs[idx]) {
+                                imgs[idx].src = newUrl;
+                                imgs[idx].style.maxWidth = '100%';
+                                imgs[idx].style.height = 'auto';
+                            }
+                        }""", [i, unsplash_url])
+                        replaced += 1
+                        steps.append({"step": f"이미지 교체({query_text[:15]})", "status": "success"})
+                        logger.info(f"base64 이미지 #{i} → Unsplash 교체 완료")
+                        time.sleep(0.5)
+                    except Exception as e:
+                        logger.warning(f"이미지 교체 실패 #{i}: {e}")
+                        steps.append({"step": f"이미지 교체 #{i}", "status": "failed", "error": str(e)})
+
+            steps.append({"step": "이미지 교체", "status": "success", "replaced": replaced, "total": b64_count})
+
+            # ── 4) ##AD## 텍스트 → 애드센스 DOM 삽입 ──
+            ad_inserted = frame.evaluate("""() => {
+                const body = document.body;
+                if (!body) return 0;
+                // 텍스트 노드에서 ##AD## 찾기
+                const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT, null, false);
+                const adNodes = [];
+                while (walker.nextNode()) {
+                    if (walker.currentNode.textContent.includes('##AD##')) {
+                        adNodes.push(walker.currentNode);
+                    }
+                }
+                let count = 0;
+                for (const node of adNodes) {
+                    const parent = node.parentNode;
+                    if (!parent) continue;
+
+                    // ##AD## 텍스트 제거
+                    node.textContent = node.textContent.replace('##AD##', '');
+
+                    // 애드센스 요소 생성
+                    const script = document.createElement('script');
+                    script.async = true;
+                    script.src = 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-1646757278810260';
+                    script.setAttribute('crossorigin', 'anonymous');
+
+                    const ins = document.createElement('ins');
+                    ins.className = 'adsbygoogle';
+                    ins.style.cssText = 'display:block;text-align:center;';
+                    ins.setAttribute('data-ad-layout', 'in-article');
+                    ins.setAttribute('data-ad-format', 'fluid');
+                    ins.setAttribute('data-ad-client', 'ca-pub-1646757278810260');
+                    ins.setAttribute('data-ad-slot', '3141593954');
+
+                    const push = document.createElement('script');
+                    push.textContent = '(adsbygoogle = window.adsbygoogle || []).push({});';
+
+                    parent.after(push);
+                    parent.after(ins);
+                    parent.after(script);
+                    count++;
+                }
+                return count;
+            }""")
+            logger.info(f"애드센스 삽입 {ad_inserted}개")
+            steps.append({"step": "애드센스 삽입", "status": "success", "count": ad_inserted})
+
+            # TinyMCE 변경 알림
+            page.evaluate("""() => {
+                if (window.tinymce && tinymce.activeEditor) {
+                    tinymce.activeEditor.fire('change');
+                    tinymce.activeEditor.save();
+                }
+            }""")
+            time.sleep(1)
+
+            # ── 5) 임시저장 ──
+            _click_draft_save(page)
+            time.sleep(3)
+            steps.append({"step": "임시저장", "status": "success"})
+
+            # 최종 상태 확인
+            final_b64 = frame.evaluate("() => document.querySelectorAll('img[src^=\"data:image\"]').length")
+            final_imgs = frame.evaluate("() => document.querySelectorAll('img').length")
+            final_h2 = frame.evaluate("() => document.querySelectorAll('h2').length")
+            body_len = frame.evaluate("() => document.body.innerText.length")
+            has_adsense = frame.evaluate("() => document.querySelectorAll('ins.adsbygoogle').length")
+
+            result = {
+                "success": True,
+                "steps": steps,
+                "summary": {
+                    "base64_remaining": final_b64,
+                    "total_images": final_imgs,
+                    "h2_count": final_h2,
+                    "body_length": body_len,
+                    "adsense_count": has_adsense,
+                    "images_replaced": replaced,
+                },
+            }
+            logger.info(f"edit_latest_draft 완료: {result['summary']}")
+            return result
+
+        except Exception as e:
+            if page:
+                _save_error_screenshot(page, prefix="edit_draft_error")
+            steps.append({"step": "오류", "status": "failed", "error": str(e)})
+            return {"success": False, "error": str(e), "steps": steps}
+
+        finally:
+            browser.close()
+
+
 # ─── 내부 헬퍼 함수들 ───
 
 
