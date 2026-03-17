@@ -440,97 +440,107 @@ def edit_latest_draft(blog_id: str, account_id: str = None) -> dict:
                     unsplash_urls.append("")
                     steps.append({"step": f"Unsplash({query_text[:15]})", "status": "failed", "error": str(e)})
 
-            # ── 5) TinyMCE content API로 이미지 교체 + 애드센스 정리 + 재삽입 (한번에) ──
-            result_info = page.evaluate("""(urls) => {
+            # ── 5) TinyMCE getContent → Python 가공 → setContent ──
+            raw_html = page.evaluate("""() => {
                 const editor = tinymce.activeEditor;
-                if (!editor) return {replaced: 0, ads: 0};
+                return editor ? editor.getContent() : '';
+            }""")
 
-                let html = editor.getContent();
-                let replaced = 0;
+            result_info = {}
+            if not raw_html:
+                steps.append({"step": "HTML 추출 실패", "status": "failed"})
+            else:
+                html = raw_html
+                replaced_count = 0
 
-                // 1) base64 이미지를 Unsplash URL로 교체
-                for (let i = 0; i < urls.length; i++) {
-                    if (!urls[i]) continue;
-                    const b64Pattern = /src="data:image[^"]*"/i;
-                    if (b64Pattern.test(html)) {
-                        html = html.replace(b64Pattern,
-                            'src="' + urls[i] + '" style="max-width:100%;height:auto;border-radius:8px;"');
-                        replaced++;
-                    }
-                }
+                # 5-1) base64 이미지를 Unsplash URL로 교체
+                for url in unsplash_urls:
+                    if not url:
+                        continue
+                    m = _re_module.search(r'src="data:image[^"]*"', html)
+                    if m:
+                        html = html[:m.start()] + f'src="{url}" style="max-width:100%;height:auto;border-radius:8px;"' + html[m.end():]
+                        replaced_count += 1
 
-                // 이미지가 없었으면 H2 뒤에 추가
-                if (replaced === 0 && !(/<img/i.test(html))) {
-                    const h2Pattern = /<h2[^>]*>[\s\S]*?<\/h2>/gi;
-                    let match, count = 0;
-                    const insertions = [];
-                    while ((match = h2Pattern.exec(html)) !== null && count < urls.length) {
-                        if (urls[count]) {
-                            insertions.push({
-                                pos: match.index + match[0].length,
-                                url: urls[count]
-                            });
-                        }
-                        count++;
-                    }
-                    // 역순 삽입
-                    for (let j = insertions.length - 1; j >= 0; j--) {
-                        const ins = insertions[j];
-                        const imgHtml = '<figure style="margin:1.2em 0;text-align:center;">'
-                            + '<img src="' + ins.url + '" style="max-width:100%;height:auto;border-radius:8px;" />'
-                            + '</figure>';
-                        html = html.slice(0, ins.pos) + imgHtml + html.slice(ins.pos);
-                        replaced++;
-                    }
-                }
+                # 5-2) 마크다운 표 → HTML table 변환
+                table_converted = 0
+                # TinyMCE에서 마크다운 표가 <p>|...|</p> 형태로 저장됨
+                def _convert_md_table_in_html(match_html):
+                    nonlocal table_converted
+                    block = match_html.group(0)
+                    # <p> 태그 제거하고 줄 추출
+                    lines = _re_module.findall(r'(\|[^<]+\|)', block)
+                    if len(lines) < 2:
+                        return block
+                    table_html = _markdown_table_to_html(lines)
+                    if table_html:
+                        table_converted += 1
+                        return table_html
+                    return block
 
-                // 2) 애드센스 흔적 제거
-                html = html.replace(/<script[^>]*pagead2[^>]*>[\s\S]*?<\/script>/gi, '');
-                html = html.replace(/<script[^>]*>[^<]*adsbygoogle[^<]*<\/script>/gi, '');
-                html = html.replace(/<ins[^>]*adsbygoogle[^>]*>[\s\S]*?<\/ins>/gi, '');
-                html = html.replace(/<div[^>]*ad-container[^>]*>[\s\S]*?<\/div>/gi, '');
-                html = html.replace(/<div[^>]*ad-adsense[^>]*>[\s\S]*?<\/div>/gi, '');
-                html = html.replace(/##AD##/g, '');
-                html = html.replace(/\(adsbygoogle\s*=\s*window\.adsbygoogle\s*\|\|\s*\[\]\)\.push\(\{\}\);?/g, '');
-                html = html.replace(/(<p>\s*(&nbsp;)?\s*<\/p>\s*){3,}/gi, '<p>&nbsp;</p>');
+                # 연속된 <p>|...|</p> 블록 찾기 (표 행들)
+                html = _re_module.sub(
+                    r'(?:<p>\s*\|[^<]*\|\s*</p>\s*){2,}',
+                    _convert_md_table_in_html,
+                    html,
+                )
+                if table_converted:
+                    logger.info(f"마크다운 표 {table_converted}개 HTML 변환")
 
-                // 3) H2 뒤에 애드센스 삽입 (2번째, 4번째 H2 뒤)
-                const adBlock = '<div class="ad-adsense" style="margin:1.5em 0;text-align:center;">'
-                    + '<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-1646757278810260" crossorigin="anonymous"></script>'
-                    + '<ins class="adsbygoogle" style="display:block;text-align:center;" data-ad-layout="in-article" data-ad-format="fluid" data-ad-client="ca-pub-1646757278810260" data-ad-slot="3141593954"></ins>'
-                    + '<script>(adsbygoogle = window.adsbygoogle || []).push({});</script>'
-                    + '</div>';
+                # 5-3) 애드센스 흔적 제거
+                for pattern in [
+                    r'<script[^>]*pagead2[^>]*>[\s\S]*?</script>',
+                    r'<script[^>]*>[^<]*adsbygoogle[^<]*</script>',
+                    r'<ins[^>]*adsbygoogle[^>]*>[\s\S]*?</ins>',
+                    r'<div[^>]*ad-container[^>]*>[\s\S]*?</div>',
+                    r'<div[^>]*ad-adsense[^>]*>[\s\S]*?</div>',
+                    r'\(adsbygoogle\s*=\s*window\.adsbygoogle\s*\|\|\s*\[\]\)\.push\(\{\}\);?',
+                ]:
+                    html = _re_module.sub(pattern, '', html, flags=_re_module.IGNORECASE)
+                html = _re_module.sub(r'##AD##', '', html)
+                html = _re_module.sub(r'(<p>\s*(&nbsp;)?\s*</p>\s*){3,}', '<p>&nbsp;</p>', html, flags=_re_module.IGNORECASE)
 
-                let count = 0;
-                // H2 위치 찾기
-                const h2Pattern = /<h2[^>]*>[\s\S]*?<\/h2>/gi;
-                const h2Matches = [];
-                let m;
-                while ((m = h2Pattern.exec(html)) !== null) {
-                    h2Matches.push(m.index + m[0].length);
-                }
+                # 5-4) 애드센스 삽입 (2번째, 4번째 H2 뒤 첫 번째 </p> 이후)
+                ad_block = (
+                    '<div class="ad-adsense" style="margin:1.5em 0;text-align:center;">'
+                    '<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-1646757278810260" crossorigin="anonymous"></script>'
+                    '<ins class="adsbygoogle" style="display:block;text-align:center;" data-ad-layout="in-article" data-ad-format="fluid" data-ad-client="ca-pub-1646757278810260" data-ad-slot="3141593954"></ins>'
+                    '<script>(adsbygoogle = window.adsbygoogle || []).push({});</script>'
+                    '</div>'
+                )
 
-                // 2번째, 4번째 H2 뒤에 삽입 (역순으로 삽입해야 인덱스 안 밀림)
-                const insertAfter = [3, 1]; // 0-indexed, 역순
-                for (const idx of insertAfter) {
-                    if (idx >= h2Matches.length) continue;
-                    const pos = h2Matches[idx];
-                    // H2 바로 뒤 첫 번째 </p> 찾기
-                    const nextP = html.indexOf('</p>', pos);
-                    if (nextP > 0) {
-                        const insertPos = nextP + 4;
-                        html = html.slice(0, insertPos) + adBlock + html.slice(insertPos);
-                        count++;
-                    }
-                }
+                h2_positions = [m.end() for m in _re_module.finditer(r'<h2[^>]*>[\s\S]*?</h2>', html, _re_module.IGNORECASE)]
+                ad_count = 0
+                # 역순 삽입 (4번째 → 2번째, 0-indexed: 3 → 1)
+                for idx in [3, 1]:
+                    if idx >= len(h2_positions):
+                        continue
+                    pos = h2_positions[idx]
+                    # H2 뒤 첫 </p> 찾되, <img 직후가 아닌 텍스트 </p> 뒤에 삽입
+                    search_start = pos
+                    while True:
+                        p_close = html.find('</p>', search_start)
+                        if p_close < 0:
+                            break
+                        insert_pos = p_close + 4
+                        # 이 </p> 바로 앞에 img 태그가 있으면 건너뛰기
+                        p_open = html.rfind('<p', search_start, p_close)
+                        p_content = html[p_open:p_close] if p_open >= 0 else ''
+                        if _re_module.search(r'<img\s', p_content):
+                            search_start = insert_pos
+                            continue
+                        # img 없는 텍스트 블록 뒤 → 여기에 삽입
+                        html = html[:insert_pos] + ad_block + html[insert_pos:]
+                        ad_count += 1
+                        break
 
-                editor.setContent(html);
-                return {replaced: replaced, ads: count};
-            }""", unsplash_urls)
-            replaced = result_info.get("replaced", 0) if result_info else 0
-            ad_count = result_info.get("ads", 0) if result_info else 0
-            logger.info(f"이미지 교체 {replaced}개, 애드센스 삽입 {ad_count}개")
-            steps.append({"step": "이미지 교체 + 애드센스", "status": "success", "replaced": replaced, "ads": ad_count})
+                # setContent
+                page.evaluate("(h) => { tinymce.activeEditor.setContent(h); }", html)
+
+                result_info = {"replaced": replaced_count, "ads": ad_count, "tables": table_converted}
+                logger.info(f"이미지 교체 {replaced_count}개, 애드센스 삽입 {ad_count}개, 표 변환 {table_converted}개")
+                steps.append({"step": "이미지 교체 + 애드센스 + 표", "status": "success",
+                              "replaced": replaced_count, "ads": ad_count, "tables": table_converted})
 
             # TinyMCE 변경 알림
             page.evaluate("""() => {
@@ -562,7 +572,7 @@ def edit_latest_draft(blog_id: str, account_id: str = None) -> dict:
                     "h2_count": final_h2,
                     "body_length": body_len,
                     "adsense_count": has_adsense,
-                    "images_replaced": result_info.get("replaced", 0) if result_info else 0,
+                    "images_replaced": result_info.get("replaced", 0) if isinstance(result_info, dict) else 0,
                 },
             }
             logger.info(f"edit_latest_draft 완료: {result['summary']}")
