@@ -212,7 +212,7 @@ def publish_to_naver(title: str, body_html: str, tags: list[str],
             _save_step_screenshot(page, entry_id, "01_login.png")
 
             # 3) 에디터 로드 + 팝업 닫기
-            page.wait_for_selector(".se-content", timeout=15000)
+            page.wait_for_selector(".se-content", timeout=30000)
             steps.append({"step": "에디터 로드", "status": "success"})
 
             time.sleep(1)
