@@ -10,7 +10,10 @@ import os
 import time
 import random
 import logging
+import base64
+import tempfile
 
+import requests as http_requests
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 
 logger = logging.getLogger(__name__)
@@ -155,7 +158,26 @@ def publish_to_tistory(blog_id: str, title: str, body_html: str, tags: list[str]
         return {"success": False, "error": f"발행 간격 제한: {wait}초 후 다시 시도해주세요.", "steps": []}
 
     steps = []
+    tmp_files = []  # 임시 이미지 파일 추적 (cleanup용)
     cookie_path = _get_cookie_path(cookie_id)
+
+    # ── 이미지 생성: 본문에서 H2 소제목 추출 → 소제목별 이미지 생성 ──
+    import re as _re
+    h2_headings = _re.findall(r'##H2:(.+?)##', body_html)
+    if not h2_headings:
+        h2_headings = [_re.sub(r'<[^>]+>', '', m).strip()
+                       for m in _re.findall(r'<h2[^>]*>(.*?)</h2>', body_html, _re.DOTALL)]
+    section_images = []
+    for heading in h2_headings[:3]:  # 최대 3장
+        try:
+            en_prompt = _translate_to_english(heading)
+            img_path = _generate_imagen(en_prompt)
+            tmp_files.append(img_path)
+            section_images.append(img_path)
+            steps.append({"step": f"이미지 생성({heading[:15]})", "status": "success"})
+        except Exception as e:
+            logger.warning(f"이미지 생성 실패 ({heading}): {e}")
+            steps.append({"step": f"이미지 생성({heading[:15]})", "status": "failed", "error": str(e)})
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
@@ -209,9 +231,10 @@ def publish_to_tistory(blog_id: str, title: str, body_html: str, tags: list[str]
             steps.append({"step": "제목 입력", "status": "success"})
             time.sleep(random.uniform(1.0, 3.0))
 
-            # 6) 본문 HTML 입력 (TinyMCE)
-            _type_body_html(page, body_html)
-            steps.append({"step": "본문 입력", "status": "success"})
+            # 6) 본문 HTML 입력 (TinyMCE) + 소제목별 이미지 삽입
+            _type_body_html(page, body_html, images=section_images)
+            steps.append({"step": "본문 입력", "status": "success",
+                          "images": len(section_images)})
             time.sleep(random.uniform(1.0, 3.0))
 
             # 7) 태그 입력
@@ -248,6 +271,13 @@ def publish_to_tistory(blog_id: str, title: str, body_html: str, tags: list[str]
             return {"success": False, "error": str(e), "steps": steps}
 
         finally:
+            # 임시 이미지 파일 정리
+            for f in tmp_files:
+                try:
+                    if os.path.exists(f):
+                        os.unlink(f)
+                except Exception:
+                    pass
             browser.close()
 
 
@@ -408,10 +438,14 @@ def _type_title(page, title: str):
     raise RuntimeError("제목 입력 필드를 찾을 수 없습니다.")
 
 
-def _type_body_html(page, body_html: str):
+def _type_body_html(page, body_html: str, images: list = None):
     """TinyMCE iframe 안에서 타이핑 방식으로 본문을 입력합니다.
-    ##H2:소제목##, ##H3:소제목##, ##AD## 마크업을 인식하여 처리합니다."""
+    ##H2:소제목##, ##H3:소제목##, ##AD## 마크업을 인식하여 처리합니다.
+    images: 이미지 파일 경로 리스트. H2 소제목 뒤에 순서대로 삽입."""
     import re as _re
+
+    if images is None:
+        images = []
 
     # TinyMCE iframe이 로드될 때까지 대기
     try:
@@ -447,6 +481,7 @@ def _type_body_html(page, body_html: str):
     text = text.strip()
 
     # 줄 단위로 처리
+    h2_count = 0  # H2 소제목 카운터 (이미지 삽입용)
     lines = text.split('\n')
     for line in lines:
         stripped = line.strip()
@@ -468,6 +503,11 @@ def _type_body_html(page, body_html: str):
             # 본문(p)으로 복귀
             page.evaluate("() => { if(tinymce.activeEditor) tinymce.activeEditor.execCommand('FormatBlock', false, 'p'); }")
             time.sleep(0.3)
+
+            # H2 뒤에 이미지 삽입
+            if h2_count < len(images):
+                _insert_image_into_tinymce(page, frame, images[h2_count], alt_text=heading_text)
+            h2_count += 1
             continue
 
         # ##H3:소제목## 처리
@@ -645,6 +685,141 @@ def _click_draft_save(page):
         pass
 
     raise RuntimeError("임시저장 버튼을 찾을 수 없습니다.")
+
+
+# ─── 이미지 생성 함수 (naver_playwright.py 에서 이식) ───
+
+
+def _translate_to_english(text: str) -> str:
+    """한국어 텍스트를 영어 이미지 프롬프트로 변환합니다."""
+    try:
+        import anthropic
+        client = anthropic.Anthropic()
+        resp = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=100,
+            messages=[{
+                "role": "user",
+                "content": (
+                    f"Translate the following Korean text into a short English image prompt "
+                    f"suitable for AI image generation. Output ONLY the English prompt, nothing else.\n\n"
+                    f"Text: {text}"
+                ),
+            }],
+        )
+        return resp.content[0].text.strip()
+    except Exception as e:
+        logger.warning(f"번역 실패, 원문 사용: {e}")
+        return text
+
+
+def _fetch_pexels_image(query: str, width: int = 800, height: int = 533) -> str:
+    """Pexels API로 이미지를 검색하여 첫 번째 결과를 다운로드합니다."""
+    api_key = os.environ.get("PEXELS_API_KEY", "")
+    if not api_key:
+        raise RuntimeError("PEXELS_API_KEY가 설정되지 않았습니다.")
+
+    headers = {"Authorization": api_key}
+    params = {"query": query, "per_page": 1, "orientation": "landscape"}
+    resp = http_requests.get(
+        "https://api.pexels.com/v1/search",
+        headers=headers, params=params, timeout=15,
+    )
+    if resp.status_code != 200:
+        raise RuntimeError(f"Pexels API 오류 {resp.status_code}")
+
+    photos = resp.json().get("photos", [])
+    if not photos:
+        raise RuntimeError("Pexels 검색 결과가 없습니다.")
+
+    img_url = photos[0]["src"]["large"]
+    img_resp = http_requests.get(img_url, timeout=30)
+    if img_resp.status_code != 200:
+        raise RuntimeError(f"Pexels 이미지 다운로드 실패 {img_resp.status_code}")
+
+    tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+    tmp.write(img_resp.content)
+    tmp.close()
+
+    _resize_image(tmp.name, width, height)
+    logger.info(f"Pexels fallback 이미지: {query} → {tmp.name}")
+    return tmp.name
+
+
+def _resize_image(path: str, width: int, height: int) -> str:
+    """이미지를 정확한 크기로 리사이즈하여 같은 경로에 저장합니다."""
+    from PIL import Image
+    with Image.open(path) as img:
+        img = img.convert("RGB")
+        img = img.resize((width, height), Image.LANCZOS)
+        img.save(path, "PNG", optimize=True)
+    return path
+
+
+def _generate_imagen(prompt: str) -> str:
+    """Imagen 4 Fast로 본문 이미지(800x533)를 생성합니다."""
+    api_key = os.environ.get("GOOGLE_API_KEY", "")
+    if not api_key:
+        raise RuntimeError("GOOGLE_API_KEY가 설정되지 않았습니다.")
+
+    url = (
+        f"https://generativelanguage.googleapis.com/v1beta/"
+        f"models/imagen-4.0-fast-generate-001:predict?key={api_key}"
+    )
+    prefix = (
+        "Photorealistic nature photo only. Absolutely no text, no words, "
+        "no letters, no captions, no labels, no watermarks, no titles "
+        "anywhere in the image. "
+    )
+    payload = {
+        "instances": [{"prompt": prefix + prompt}],
+        "parameters": {"sampleCount": 1, "aspectRatio": "4:3"},
+    }
+
+    resp = http_requests.post(url, json=payload, timeout=60)
+    if resp.status_code == 429:
+        logger.warning("Imagen API 429 → Pexels fallback")
+        return _fetch_pexels_image(prompt, 800, 533)
+    if resp.status_code != 200:
+        raise RuntimeError(f"Imagen API 오류 {resp.status_code}: {resp.text[:200]}")
+
+    predictions = resp.json().get("predictions", [])
+    if not predictions or not predictions[0].get("bytesBase64Encoded"):
+        raise RuntimeError("Imagen 응답에 이미지가 없습니다.")
+
+    img_bytes = base64.b64decode(predictions[0]["bytesBase64Encoded"])
+    tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+    tmp.write(img_bytes)
+    tmp.close()
+
+    _resize_image(tmp.name, 800, 533)
+    return tmp.name
+
+
+def _insert_image_into_tinymce(page, frame, img_path: str, alt_text: str = ""):
+    """TinyMCE iframe에 이미지를 삽입합니다.
+    이미지를 base64 data URL로 변환 후 insertContent API로 삽입."""
+    try:
+        with open(img_path, "rb") as f:
+            img_b64 = base64.b64encode(f.read()).decode("ascii")
+
+        img_html = (
+            f'<figure style="margin:1.2em 0;text-align:center;">'
+            f'<img src="data:image/png;base64,{img_b64}" '
+            f'alt="{alt_text}" '
+            f'style="max-width:100%;height:auto;border-radius:8px;" />'
+            f'</figure><p>&nbsp;</p>'
+        )
+        page.evaluate(
+            "(html) => { if(tinymce.activeEditor) tinymce.activeEditor.insertContent(html); }",
+            img_html,
+        )
+        time.sleep(1)
+        logger.info(f"TinyMCE 이미지 삽입 완료: {alt_text}")
+        return True
+    except Exception as e:
+        logger.warning(f"TinyMCE 이미지 삽입 실패: {e}")
+        return False
 
 
 def _save_error_screenshot(page, prefix="tistory_error"):
