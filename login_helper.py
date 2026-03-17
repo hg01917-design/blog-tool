@@ -54,11 +54,14 @@ def main():
                         help="플랫폼 (기본: naver)")
     parser.add_argument("--server", default=DEFAULT_SERVER,
                         help=f"서버 URL (기본: {DEFAULT_SERVER})")
+    parser.add_argument("--blog-domain", default="",
+                        help="커스텀 도메인 (예: welfer.baremi542.com)")
     args = parser.parse_args()
 
     account_id = args.account
     platform = args.platform
     server_url = args.server.rstrip("/")
+    blog_domain = args.blog_domain.strip()
     config = PLATFORM_CONFIG[platform]
 
     platform_name = "네이버" if platform == "naver" else "티스토리"
@@ -102,7 +105,10 @@ def main():
 
             # 블로그 페이지 방문 → 로그인 상태 + 블로그 쿠키 수집
             print(f"[3/4] 로그인 상태를 확인합니다...")
-            blog_url = config["blog_url"](account_id)
+            if blog_domain:
+                blog_url = f"https://{blog_domain}/manage"
+            else:
+                blog_url = config["blog_url"](account_id)
             page.goto(blog_url, wait_until="domcontentloaded")
             time.sleep(2)
 
