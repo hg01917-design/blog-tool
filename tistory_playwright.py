@@ -483,24 +483,48 @@ def _type_body_html(page, body_html: str):
             time.sleep(0.3)
             continue
 
-        # ##AD## 처리: ins 태그 직접 삽입 (script 태그 금지)
+        # ##AD## 처리: iframe DOM에 직접 script+ins 삽입 (TinyMCE 우회)
         if stripped == '##AD##':
             try:
-                ad_html = (
-                    '<ins class="adsbygoogle" '
-                    'style="display:block;text-align:center;" '
-                    'data-ad-layout="in-article" '
-                    'data-ad-format="fluid" '
-                    'data-ad-client="ca-pub-1646757278810260" '
-                    'data-ad-slot="3141593954"></ins>'
-                )
-                page.evaluate("""(html) => {
-                    if (tinymce.activeEditor) {
-                        tinymce.activeEditor.execCommand('insertHTML', false, html);
+                frame.evaluate("""() => {
+                    const body = document.body;
+                    if (!body) return;
+                    // 현재 커서 위치 또는 마지막 요소 뒤에 삽입
+                    const sel = window.getSelection();
+                    let refNode = body.lastChild;
+                    if (sel && sel.rangeCount > 0) {
+                        refNode = sel.getRangeAt(0).endContainer;
+                        if (refNode.nodeType === 3) refNode = refNode.parentNode;
                     }
-                }""", ad_html)
+                    // ins 태그 생성
+                    const ins = document.createElement('ins');
+                    ins.className = 'adsbygoogle';
+                    ins.style.cssText = 'display:block;text-align:center;';
+                    ins.setAttribute('data-ad-layout', 'in-article');
+                    ins.setAttribute('data-ad-format', 'fluid');
+                    ins.setAttribute('data-ad-client', 'ca-pub-1646757278810260');
+                    ins.setAttribute('data-ad-slot', '3141593954');
+                    // script 태그 생성
+                    const script = document.createElement('script');
+                    script.async = true;
+                    script.src = 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-1646757278810260';
+                    script.setAttribute('crossorigin', 'anonymous');
+                    // push script
+                    const pushScript = document.createElement('script');
+                    pushScript.textContent = '(adsbygoogle = window.adsbygoogle || []).push({});';
+                    // DOM에 삽입
+                    if (refNode && refNode !== body) {
+                        refNode.after(pushScript);
+                        refNode.after(ins);
+                        refNode.after(script);
+                    } else {
+                        body.appendChild(script);
+                        body.appendChild(ins);
+                        body.appendChild(pushScript);
+                    }
+                }""")
                 time.sleep(0.5)
-                logger.info("애드센스 ins 태그 삽입 완료")
+                logger.info("애드센스 DOM 직접 삽입 완료 (script+ins)")
             except Exception as e:
                 logger.warning(f"애드센스 삽입 실패: {e}")
             continue
