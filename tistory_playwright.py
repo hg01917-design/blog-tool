@@ -788,6 +788,12 @@ def _type_body_html(page, body_html: str, image_urls: list = None):
         text,
         flags=_re.DOTALL,
     )
+    # 인라인 마크다운 → HTML 변환 (HTML 스트립 전에, <strong>/<em> 보존)
+    # HTML <strong>/<em> 태그를 마크다운 마커로 임시 변환
+    text = _re.sub(r'<strong>(.*?)</strong>', r'**\1**', text, flags=_re.DOTALL)
+    text = _re.sub(r'<b>(.*?)</b>', r'**\1**', text, flags=_re.DOTALL)
+    text = _re.sub(r'<em>(.*?)</em>', r'*\1*', text, flags=_re.DOTALL)
+    text = _re.sub(r'<i>(.*?)</i>', r'*\1*', text, flags=_re.DOTALL)
     text = _re.sub(r'<br\s*/?>', '\n', text)
     text = _re.sub(r'</(?:p|div|li|tr)>', '\n', text)
     text = _re.sub(r'<[^>]+>', '', text)
@@ -796,6 +802,16 @@ def _type_body_html(page, body_html: str, image_urls: list = None):
     text = _re.sub(r'^##\s+(.+)$', r'##H2:\1##', text, flags=_re.MULTILINE)
     text = _re.sub(r'\n{3,}', '\n\n', text)
     text = text.strip()
+
+    # 마크다운 본문에 ##AD##가 없으면 H2 기준으로 자동 삽입 (2번째, 4번째 H2 뒤)
+    if '##AD##' not in text:
+        _lines = text.split('\n')
+        _h2_indices = [j for j, ln in enumerate(_lines) if _re.match(r'##H2:.+?##', ln.strip())]
+        for _target in reversed([1, 3]):  # 2번째(idx 1), 4번째(idx 3) H2 뒤
+            if _target < len(_h2_indices):
+                _insert_at = _h2_indices[_target] + 1
+                _lines.insert(_insert_at, '##AD##')
+        text = '\n'.join(_lines)
 
     # 줄 단위로 처리 (마크다운 표 블록은 먼저 추출)
     h2_count = 0  # H2 소제목 카운터 (이미지 삽입용)
@@ -914,10 +930,22 @@ def _type_body_html(page, body_html: str, image_urls: list = None):
             i += 1
             continue
 
-        # 일반 텍스트 타이핑
-        frame.page.keyboard.type(stripped, delay=random.randint(40, 120))
-        frame.page.keyboard.press("Enter")
-        time.sleep(random.uniform(0.1, 0.3))
+        # 일반 텍스트 — 인라인 마크다운이 있으면 insertContent, 없으면 keyboard.type
+        if '**' in stripped or ('*' in stripped and _re.search(r'(?<!\*)\*(?!\*)', stripped)):
+            # 마크다운 인라인 → HTML 변환
+            html_line = stripped
+            html_line = _re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', html_line)
+            html_line = _re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', r'<em>\1</em>', html_line)
+            html_line = f'<p>{html_line}</p>'
+            page.evaluate(
+                "(html) => { if(tinymce.activeEditor) tinymce.activeEditor.insertContent(html); }",
+                html_line,
+            )
+            time.sleep(0.2)
+        else:
+            frame.page.keyboard.type(stripped, delay=random.randint(40, 120))
+            frame.page.keyboard.press("Enter")
+            time.sleep(random.uniform(0.1, 0.3))
         i += 1
 
     # TinyMCE에 변경사항 반영
