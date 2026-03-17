@@ -7,6 +7,7 @@
 
 import json
 import os
+import re as _re_module
 import time
 import random
 import logging
@@ -161,7 +162,7 @@ def publish_to_tistory(blog_id: str, title: str, body_html: str, tags: list[str]
     tmp_files = []  # 임시 이미지 파일 추적 (cleanup용)
     cookie_path = _get_cookie_path(cookie_id)
 
-    # ── 이미지 생성: 본문에서 H2 소제목 추출 → 소제목별 이미지 생성 ──
+    # ── Unsplash 이미지: 본문에서 H2 소제목 추출 → 소제목별 이미지 검색 ──
     import re as _re
     h2_headings = _re.findall(r'##H2:(.+?)##', body_html)
     if not h2_headings:
@@ -170,17 +171,16 @@ def publish_to_tistory(blog_id: str, title: str, body_html: str, tags: list[str]
     if not h2_headings:
         # 마크다운 ## 형식도 지원
         h2_headings = _re.findall(r'^##\s+(.+)$', body_html, _re.MULTILINE)
-    section_images = []
+    section_image_urls = []
     for heading in h2_headings[:3]:  # 최대 3장
         try:
-            en_prompt = _translate_to_english(heading)
-            img_path = _generate_imagen(en_prompt)
-            tmp_files.append(img_path)
-            section_images.append(img_path)
-            steps.append({"step": f"이미지 생성({heading[:15]})", "status": "success"})
+            en_query = _translate_to_english(heading)
+            img_url = _fetch_unsplash_image_url(en_query)
+            section_image_urls.append(img_url)
+            steps.append({"step": f"Unsplash 이미지({heading[:15]})", "status": "success"})
         except Exception as e:
-            logger.warning(f"이미지 생성 실패 ({heading}): {e}")
-            steps.append({"step": f"이미지 생성({heading[:15]})", "status": "failed", "error": str(e)})
+            logger.warning(f"Unsplash 이미지 실패 ({heading}): {e}")
+            steps.append({"step": f"Unsplash 이미지({heading[:15]})", "status": "failed", "error": str(e)})
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
@@ -235,9 +235,9 @@ def publish_to_tistory(blog_id: str, title: str, body_html: str, tags: list[str]
             time.sleep(random.uniform(1.0, 3.0))
 
             # 6) 본문 HTML 입력 (TinyMCE) + 소제목별 이미지 삽입
-            _type_body_html(page, body_html, images=section_images, blog_id=blog_id)
+            _type_body_html(page, body_html, image_urls=section_image_urls)
             steps.append({"step": "본문 입력", "status": "success",
-                          "images": len(section_images)})
+                          "images": len(section_image_urls)})
             time.sleep(random.uniform(1.0, 3.0))
 
             # 7) 태그 입력
@@ -441,14 +441,14 @@ def _type_title(page, title: str):
     raise RuntimeError("제목 입력 필드를 찾을 수 없습니다.")
 
 
-def _type_body_html(page, body_html: str, images: list = None, blog_id: str = ""):
+def _type_body_html(page, body_html: str, image_urls: list = None):
     """TinyMCE iframe 안에서 타이핑 방식으로 본문을 입력합니다.
     ##H2:소제목##, ##H3:소제목##, ##AD## 마크업을 인식하여 처리합니다.
     images: 이미지 파일 경로 리스트. H2 소제목 뒤에 순서대로 삽입."""
     import re as _re
 
-    if images is None:
-        images = []
+    if image_urls is None:
+        image_urls = []
 
     # TinyMCE iframe이 로드될 때까지 대기
     try:
@@ -493,14 +493,39 @@ def _type_body_html(page, body_html: str, images: list = None, blog_id: str = ""
     text = _re.sub(r'\n{3,}', '\n\n', text)
     text = text.strip()
 
-    # 줄 단위로 처리
+    # 줄 단위로 처리 (마크다운 표 블록은 먼저 추출)
     h2_count = 0  # H2 소제목 카운터 (이미지 삽입용)
     lines = text.split('\n')
-    for line in lines:
-        stripped = line.strip()
+    i = 0
+    while i < len(lines):
+        stripped = lines[i].strip()
         if not stripped:
             frame.page.keyboard.press("Enter")
             time.sleep(0.05)
+            i += 1
+            continue
+
+        # 마크다운 표 감지: | 로 시작하는 연속 줄 (최소 2줄)
+        if stripped.startswith("|") and "|" in stripped[1:]:
+            table_lines = []
+            while i < len(lines) and lines[i].strip().startswith("|"):
+                table_lines.append(lines[i])
+                i += 1
+            if len(table_lines) >= 2:
+                table_html = _markdown_table_to_html(table_lines)
+                if table_html:
+                    page.evaluate(
+                        "(html) => { if(tinymce.activeEditor) tinymce.activeEditor.insertContent(html); }",
+                        table_html,
+                    )
+                    time.sleep(0.5)
+                    logger.info(f"마크다운 표 HTML 삽입 ({len(table_lines)}행)")
+                    continue
+            # 표가 아닌 경우 일반 텍스트로 처리 (아래로 fall-through)
+            for tl in table_lines:
+                frame.page.keyboard.type(tl.strip(), delay=random.randint(40, 120))
+                frame.page.keyboard.press("Enter")
+                time.sleep(0.1)
             continue
 
         # ##H2:소제목## 처리
@@ -517,10 +542,11 @@ def _type_body_html(page, body_html: str, images: list = None, blog_id: str = ""
             page.evaluate("() => { if(tinymce.activeEditor) tinymce.activeEditor.execCommand('FormatBlock', false, 'p'); }")
             time.sleep(0.3)
 
-            # H2 뒤에 이미지 삽입
-            if h2_count < len(images):
-                _insert_image_into_tinymce(page, frame, images[h2_count], alt_text=heading_text, blog_id=blog_id)
+            # H2 뒤에 Unsplash 이미지 삽입
+            if h2_count < len(image_urls):
+                _insert_image_url_into_tinymce(page, image_urls[h2_count], alt_text=heading_text)
             h2_count += 1
+            i += 1
             continue
 
         # ##H3:소제목## 처리
@@ -534,6 +560,7 @@ def _type_body_html(page, body_html: str, images: list = None, blog_id: str = ""
             time.sleep(0.3)
             page.evaluate("() => { if(tinymce.activeEditor) tinymce.activeEditor.execCommand('FormatBlock', false, 'p'); }")
             time.sleep(0.3)
+            i += 1
             continue
 
         # ##AD## 처리: iframe DOM에 직접 script+ins 삽입 (TinyMCE 우회)
@@ -580,12 +607,14 @@ def _type_body_html(page, body_html: str, images: list = None, blog_id: str = ""
                 logger.info("애드센스 DOM 직접 삽입 완료 (script+ins)")
             except Exception as e:
                 logger.warning(f"애드센스 삽입 실패: {e}")
+            i += 1
             continue
 
         # 일반 텍스트 타이핑
         frame.page.keyboard.type(stripped, delay=random.randint(40, 120))
         frame.page.keyboard.press("Enter")
         time.sleep(random.uniform(0.1, 0.3))
+        i += 1
 
     # TinyMCE에 변경사항 반영
     page.evaluate("""() => {
@@ -809,6 +838,63 @@ def _generate_imagen(prompt: str) -> str:
     return tmp.name
 
 
+def _markdown_table_to_html(table_lines: list[str]) -> str:
+    """마크다운 표(|---|---| 형식)를 HTML <table>로 변환합니다."""
+    rows = []
+    is_header = True
+    for line in table_lines:
+        line = line.strip()
+        if not line.startswith("|"):
+            continue
+        # 구분선(|---|---| ) 무시
+        if _re_module.match(r'^\|[\s\-:|]+\|$', line):
+            is_header = False
+            continue
+        cells = [c.strip() for c in line.split("|")[1:-1]]
+        if is_header:
+            row_html = "".join(f"<th>{c}</th>" for c in cells)
+            rows.append(f"<tr>{row_html}</tr>")
+        else:
+            row_html = "".join(f"<td>{c}</td>" for c in cells)
+            rows.append(f"<tr>{row_html}</tr>")
+
+    if not rows:
+        return ""
+    # 첫 번째 행을 thead로
+    thead = f"<thead>{rows[0]}</thead>" if rows else ""
+    tbody = "<tbody>" + "".join(rows[1:]) + "</tbody>" if len(rows) > 1 else ""
+    return (
+        '<table style="border-collapse:collapse;width:100%;margin:1em 0;" '
+        'border="1" cellpadding="8" cellspacing="0">'
+        f'{thead}{tbody}</table><p>&nbsp;</p>'
+    )
+
+
+def _fetch_unsplash_image_url(query: str) -> str:
+    """Unsplash API로 이미지를 검색하여 첫 번째 결과 URL을 반환합니다."""
+    access_key = os.environ.get("UNSPLASH_ACCESS_KEY", "")
+    if not access_key or access_key == "여기에Access키붙여넣기":
+        raise RuntimeError("UNSPLASH_ACCESS_KEY가 설정되지 않았습니다.")
+
+    resp = http_requests.get(
+        "https://api.unsplash.com/search/photos",
+        params={"query": query, "orientation": "landscape", "per_page": 5},
+        headers={"Authorization": f"Client-ID {access_key}"},
+        timeout=10,
+    )
+    if resp.status_code != 200:
+        raise RuntimeError(f"Unsplash API 오류 {resp.status_code}")
+
+    results = resp.json().get("results", [])
+    if not results:
+        raise RuntimeError(f"Unsplash 검색 결과 없음: {query}")
+
+    photo = results[0]
+    url = photo["urls"]["raw"] + "?w=800&h=533&fit=crop&fm=webp&q=80"
+    logger.info(f"Unsplash 이미지: {query} → {url[:80]}...")
+    return url
+
+
 def _upload_image_to_tistory(page, img_path: str, blog_id: str) -> str:
     """티스토리 이미지 업로드 API로 이미지를 업로드하고 CDN URL을 반환합니다."""
     with open(img_path, "rb") as f:
@@ -842,19 +928,9 @@ def _upload_image_to_tistory(page, img_path: str, blog_id: str) -> str:
     return img_url
 
 
-def _insert_image_into_tinymce(page, frame, img_path: str, alt_text: str = "",
-                                blog_id: str = ""):
-    """TinyMCE iframe에 이미지를 삽입합니다.
-    티스토리 이미지 업로드 API로 업로드 후 URL로 삽입합니다."""
+def _insert_image_url_into_tinymce(page, img_url: str, alt_text: str = ""):
+    """TinyMCE iframe에 이미지 URL을 삽입합니다."""
     try:
-        if blog_id:
-            img_url = _upload_image_to_tistory(page, img_path, blog_id)
-        else:
-            # fallback: base64 (blog_id 없을 때)
-            with open(img_path, "rb") as f:
-                img_b64 = base64.b64encode(f.read()).decode("ascii")
-            img_url = f"data:image/png;base64,{img_b64}"
-
         img_html = (
             f'<figure style="margin:1.2em 0;text-align:center;">'
             f'<img src="{img_url}" '
