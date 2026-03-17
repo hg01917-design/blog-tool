@@ -3317,6 +3317,88 @@ def api_publish_screenshots(entry_id):
 
 
 # ──────────────────────────────────────────────
+# 배포 API (git pull + gunicorn 재시작)
+# ──────────────────────────────────────────────
+
+DEPLOY_TOKEN = os.environ.get("DEPLOY_TOKEN", "")
+
+
+@app.route("/api/deploy", methods=["POST"])
+def api_deploy():
+    """웹UI에서 배포 트리거. git pull + gunicorn 재시작.
+    Authorization: Bearer {DEPLOY_TOKEN} 또는 세션 인증 필요."""
+    # 인증 확인: 세션 로그인 또는 토큰
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    if not session.get("authenticated"):
+        if not DEPLOY_TOKEN or token != DEPLOY_TOKEN:
+            return jsonify({"error": "인증 필요"}), 401
+
+    import subprocess
+
+    results = {"steps": []}
+
+    # 1) git pull
+    try:
+        pull = subprocess.run(
+            ["git", "pull", "origin", "main"],
+            cwd=_APP_DIR, capture_output=True, text=True, timeout=30,
+        )
+        pull_output = pull.stdout.strip()
+        results["steps"].append({"step": "git pull", "output": pull_output, "ok": pull.returncode == 0})
+
+        if "Already up to date" in pull_output:
+            results["message"] = "이미 최신 상태입니다."
+            return jsonify(results)
+
+    except Exception as e:
+        results["steps"].append({"step": "git pull", "error": str(e), "ok": False})
+        return jsonify(results), 500
+
+    # 2) requirements.txt 변경 시 pip install
+    if "requirements.txt" in pull_output:
+        try:
+            pip = subprocess.run(
+                ["pip3", "install", "-r", "requirements.txt", "-q"],
+                cwd=_APP_DIR, capture_output=True, text=True, timeout=120,
+            )
+            results["steps"].append({"step": "pip install", "ok": pip.returncode == 0})
+        except Exception as e:
+            results["steps"].append({"step": "pip install", "error": str(e), "ok": False})
+
+    # 3) gunicorn 재시작 (SIGHUP으로 graceful reload)
+    pid_file = os.path.join(_APP_DIR, "gunicorn.pid")
+    try:
+        if os.path.exists(pid_file):
+            with open(pid_file) as f:
+                master_pid = int(f.read().strip())
+            os.kill(master_pid, 1)  # SIGHUP = graceful reload
+            results["steps"].append({"step": "gunicorn reload", "pid": master_pid, "ok": True})
+        else:
+            results["steps"].append({"step": "gunicorn reload", "error": "PID 파일 없음", "ok": False})
+    except Exception as e:
+        results["steps"].append({"step": "gunicorn reload", "error": str(e), "ok": False})
+
+    results["message"] = "배포 완료"
+    return jsonify(results)
+
+
+@app.route("/api/deploy/log")
+def api_deploy_log():
+    """최근 배포 로그 조회."""
+    if not session.get("authenticated"):
+        return jsonify({"error": "인증 필요"}), 401
+
+    log_path = os.path.join(_APP_DIR, "deploy.log")
+    if not os.path.exists(log_path):
+        return jsonify({"log": "(배포 로그 없음)"})
+
+    with open(log_path, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+    # 최근 50줄
+    return jsonify({"log": "".join(lines[-50:])})
+
+
+# ──────────────────────────────────────────────
 # 스케줄러 초기화
 # ──────────────────────────────────────────────
 
