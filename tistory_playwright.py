@@ -321,52 +321,74 @@ def edit_latest_draft(blog_id: str, account_id: str = None) -> dict:
 
             page = context.new_page()
 
-            # ── 1) 글 관리 → 최신 임시저장 글 열기 ──
-            page.goto(f"{base_url}/manage/posts", wait_until="domcontentloaded", timeout=30000)
+            # ── 1) 글쓰기 페이지 → 복원 팝업에서 임시저장 글 불러오기 ──
+            write_url = f"{base_url}/manage/newpost"
+            page.goto(write_url, wait_until="domcontentloaded", timeout=30000)
             time.sleep(3)
 
             if "accounts.kakao.com" in page.url or "auth/login" in page.url:
                 return {"success": False, "error": "쿠키 만료", "steps": steps}
-            steps.append({"step": "글 관리 접속", "status": "success"})
+            steps.append({"step": "글쓰기 접속", "status": "success"})
 
-            # 최신 임시저장 글 링크 찾기
-            draft_url = page.evaluate("""() => {
-                // 임시저장 상태 글 찾기
-                const rows = document.querySelectorAll('#content .post_list tr, #content .list_post li, #content table tbody tr');
-                for (const row of rows) {
-                    const status = row.querySelector('.status, .state, .ico_draft');
-                    const isDraft = status && (status.textContent.includes('임시') || status.textContent.includes('비공개'));
-                    const link = row.querySelector('a[href*="/manage/newpost/"], a[href*="/manage/post/"]');
-                    if (link) {
-                        if (isDraft || !status) return link.href;
-                    }
-                }
-                // fallback: 첫 번째 편집 링크
-                const firstLink = document.querySelector('a[href*="/manage/newpost/"], a[href*="/manage/post/"]');
-                return firstLink ? firstLink.href : null;
+            # "임시저장" 숫자(.count) 버튼 클릭 → 임시저장 목록 팝업
+            _dismiss_restore_popup(page)  # 자동복원 팝업 먼저 닫기
+            time.sleep(1)
+
+            # .btn-draft 안의 .count (숫자) 클릭 → 목록 열기
+            draft_count = page.evaluate("""() => {
+                const countBtn = document.querySelector('.btn-draft .count, .btn_draft .count');
+                if (countBtn) { countBtn.click(); return countBtn.textContent.trim(); }
+                return null;
             }""")
 
-            if not draft_url:
-                _save_error_screenshot(page, prefix="edit_draft_nopost")
-                return {"success": False, "error": "임시저장 글을 찾을 수 없습니다.", "steps": steps}
+            if not draft_count:
+                _save_error_screenshot(page, prefix="edit_draft_nobtn")
+                return {"success": False, "error": "임시저장 개수 버튼을 찾을 수 없습니다.", "steps": steps}
 
-            logger.info(f"임시저장 글 열기: {draft_url}")
-            page.goto(draft_url, wait_until="domcontentloaded", timeout=30000)
-            time.sleep(4)
+            logger.info(f"임시저장 목록 열기 (개수: {draft_count})")
+            time.sleep(2)
+            _save_error_screenshot(page, prefix="edit_draft_list")
 
-            # 복원 팝업 닫기 (이어서 작성)
-            page.evaluate("""() => {
-                const btns = document.querySelectorAll('button, a');
-                for (const b of btns) {
-                    const t = b.textContent.trim();
-                    if (t.includes('이어서 작성') || t.includes('복원') || t === '확인' || t === '예') {
-                        b.click(); return t;
+            # 임시저장 목록에서 제목이 있는 첫 번째 글 클릭
+            # ("제목 없음" 스킵, 실제 제목이 있는 글 선택)
+            draft_loaded = page.evaluate("""() => {
+                // 목록 영역의 모든 행에서 제목 텍스트 찾기
+                const rows = document.querySelectorAll('li, tr, div');
+                for (const row of rows) {
+                    const text = row.textContent.trim();
+                    // 제목이 있는 행 (방금/N분전 + 실제 제목)
+                    if ((text.includes('방금') || text.includes('분전') || text.includes('시간전'))
+                        && !text.startsWith('임시저장')
+                        && text.length > 10) {
+                        // "제목 없음" 스킵
+                        if (text.includes('제목 없음') || text.includes('제목없음')) continue;
+                        // 클릭 가능한 요소 찾기
+                        const clickable = row.querySelector('a') || row;
+                        clickable.click();
+                        // 제목 부분만 추출 (방금/분전 뒤의 텍스트)
+                        const title = text.replace(/^(방금|\\d+분전|\\d+시간전)\\s*/, '').substring(0, 80);
+                        return title;
+                    }
+                }
+                // fallback: 아무 글이나 첫 번째
+                for (const row of rows) {
+                    const text = row.textContent.trim();
+                    if (text.includes('방금') || text.includes('분전')) {
+                        const clickable = row.querySelector('a') || row;
+                        clickable.click();
+                        return text.substring(0, 80);
                     }
                 }
                 return null;
             }""")
-            time.sleep(2)
-            steps.append({"step": "글 열기", "status": "success", "url": draft_url})
+
+            if not draft_loaded:
+                _save_error_screenshot(page, prefix="edit_draft_noitem")
+                return {"success": False, "error": "임시저장 목록에서 글을 선택할 수 없습니다.", "steps": steps}
+
+            logger.info(f"임시저장 글 로드: {draft_loaded}")
+            time.sleep(4)  # 글 로드 대기
+            steps.append({"step": "임시저장 글 로드", "status": "success", "title": draft_loaded})
 
             # ── 2) 에디터 iframe 접근 ──
             try:
@@ -380,94 +402,135 @@ def edit_latest_draft(blog_id: str, account_id: str = None) -> dict:
             if not frame:
                 return {"success": False, "error": "iframe 접근 불가", "steps": steps}
 
-            # ── 3) base64 이미지 → Unsplash URL 교체 ──
-            # 먼저 H2 소제목 텍스트 추출 (이미지 검색 키워드용)
+            # ── 3) H2 소제목 추출 ──
             h2_texts = frame.evaluate("""() => {
                 const h2s = document.querySelectorAll('h2');
                 return Array.from(h2s).map(h => h.innerText.trim()).filter(t => t.length > 0);
             }""")
             logger.info(f"H2 소제목 {len(h2_texts)}개: {h2_texts}")
 
-            # base64 이미지 개수 확인
-            b64_count = frame.evaluate("""() => {
-                const imgs = document.querySelectorAll('img[src^="data:image"]');
-                return imgs.length;
+            # ── 4) Unsplash URL 미리 준비 (base64 이미지 교체용) ──
+            # TinyMCE getContent()에서 base64 이미지 개수 확인
+            b64_count = page.evaluate("""() => {
+                const html = tinymce.activeEditor ? tinymce.activeEditor.getContent() : '';
+                return (html.match(/src="data:image/g) || []).length;
             }""")
-            logger.info(f"base64 이미지 {b64_count}개 발견")
+            logger.info(f"base64 이미지 {b64_count}개 발견 (TinyMCE content)")
 
-            replaced = 0
-            if b64_count > 0:
-                for i in range(b64_count):
-                    query_text = h2_texts[i] if i < len(h2_texts) else (h2_texts[0] if h2_texts else "nature landscape")
-                    try:
-                        en_query = _translate_to_english(query_text)
-                        unsplash_url = _fetch_unsplash_image_url(en_query)
+            unsplash_urls = []
+            img_count = max(b64_count, 0)
+            # 이미지가 없으면 H2 기반으로 추가할 개수
+            if img_count == 0:
+                total_imgs = page.evaluate("""() => {
+                    const html = tinymce.activeEditor ? tinymce.activeEditor.getContent() : '';
+                    return (html.match(/<img/g) || []).length;
+                }""")
+                if total_imgs == 0 and h2_texts:
+                    img_count = min(3, len(h2_texts))
 
-                        # iframe 내에서 i번째 base64 이미지의 src를 교체
-                        frame.evaluate("""([idx, newUrl]) => {
-                            const imgs = document.querySelectorAll('img[src^="data:image"]');
-                            if (imgs[idx]) {
-                                imgs[idx].src = newUrl;
-                                imgs[idx].style.maxWidth = '100%';
-                                imgs[idx].style.height = 'auto';
-                            }
-                        }""", [i, unsplash_url])
-                        replaced += 1
-                        steps.append({"step": f"이미지 교체({query_text[:15]})", "status": "success"})
-                        logger.info(f"base64 이미지 #{i} → Unsplash 교체 완료")
-                        time.sleep(0.5)
-                    except Exception as e:
-                        logger.warning(f"이미지 교체 실패 #{i}: {e}")
-                        steps.append({"step": f"이미지 교체 #{i}", "status": "failed", "error": str(e)})
+            for i in range(img_count):
+                query_text = h2_texts[i] if i < len(h2_texts) else (h2_texts[0] if h2_texts else "nature landscape")
+                try:
+                    en_query = _translate_to_english(query_text)
+                    url = _fetch_unsplash_image_url(en_query)
+                    unsplash_urls.append(url)
+                    steps.append({"step": f"Unsplash({query_text[:15]})", "status": "success"})
+                except Exception as e:
+                    logger.warning(f"Unsplash 실패 ({query_text}): {e}")
+                    unsplash_urls.append("")
+                    steps.append({"step": f"Unsplash({query_text[:15]})", "status": "failed", "error": str(e)})
 
-            steps.append({"step": "이미지 교체", "status": "success", "replaced": replaced, "total": b64_count})
+            # ── 5) TinyMCE content API로 이미지 교체 + 애드센스 정리 + 재삽입 (한번에) ──
+            result_info = page.evaluate("""(urls) => {
+                const editor = tinymce.activeEditor;
+                if (!editor) return {replaced: 0, ads: 0};
 
-            # ── 4) ##AD## 텍스트 → 애드센스 DOM 삽입 ──
-            ad_inserted = frame.evaluate("""() => {
-                const body = document.body;
-                if (!body) return 0;
-                // 텍스트 노드에서 ##AD## 찾기
-                const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT, null, false);
-                const adNodes = [];
-                while (walker.nextNode()) {
-                    if (walker.currentNode.textContent.includes('##AD##')) {
-                        adNodes.push(walker.currentNode);
+                let html = editor.getContent();
+                let replaced = 0;
+
+                // 1) base64 이미지를 Unsplash URL로 교체
+                for (let i = 0; i < urls.length; i++) {
+                    if (!urls[i]) continue;
+                    const b64Pattern = /src="data:image[^"]*"/i;
+                    if (b64Pattern.test(html)) {
+                        html = html.replace(b64Pattern,
+                            'src="' + urls[i] + '" style="max-width:100%;height:auto;border-radius:8px;"');
+                        replaced++;
                     }
                 }
-                let count = 0;
-                for (const node of adNodes) {
-                    const parent = node.parentNode;
-                    if (!parent) continue;
 
-                    // ##AD## 텍스트 제거
-                    node.textContent = node.textContent.replace('##AD##', '');
-
-                    // 애드센스 요소 생성
-                    const script = document.createElement('script');
-                    script.async = true;
-                    script.src = 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-1646757278810260';
-                    script.setAttribute('crossorigin', 'anonymous');
-
-                    const ins = document.createElement('ins');
-                    ins.className = 'adsbygoogle';
-                    ins.style.cssText = 'display:block;text-align:center;';
-                    ins.setAttribute('data-ad-layout', 'in-article');
-                    ins.setAttribute('data-ad-format', 'fluid');
-                    ins.setAttribute('data-ad-client', 'ca-pub-1646757278810260');
-                    ins.setAttribute('data-ad-slot', '3141593954');
-
-                    const push = document.createElement('script');
-                    push.textContent = '(adsbygoogle = window.adsbygoogle || []).push({});';
-
-                    parent.after(push);
-                    parent.after(ins);
-                    parent.after(script);
-                    count++;
+                // 이미지가 없었으면 H2 뒤에 추가
+                if (replaced === 0 && !(/<img/i.test(html))) {
+                    const h2Pattern = /<h2[^>]*>[\s\S]*?<\/h2>/gi;
+                    let match, count = 0;
+                    const insertions = [];
+                    while ((match = h2Pattern.exec(html)) !== null && count < urls.length) {
+                        if (urls[count]) {
+                            insertions.push({
+                                pos: match.index + match[0].length,
+                                url: urls[count]
+                            });
+                        }
+                        count++;
+                    }
+                    // 역순 삽입
+                    for (let j = insertions.length - 1; j >= 0; j--) {
+                        const ins = insertions[j];
+                        const imgHtml = '<figure style="margin:1.2em 0;text-align:center;">'
+                            + '<img src="' + ins.url + '" style="max-width:100%;height:auto;border-radius:8px;" />'
+                            + '</figure>';
+                        html = html.slice(0, ins.pos) + imgHtml + html.slice(ins.pos);
+                        replaced++;
+                    }
                 }
-                return count;
-            }""")
-            logger.info(f"애드센스 삽입 {ad_inserted}개")
-            steps.append({"step": "애드센스 삽입", "status": "success", "count": ad_inserted})
+
+                // 2) 애드센스 흔적 제거
+                html = html.replace(/<script[^>]*pagead2[^>]*>[\s\S]*?<\/script>/gi, '');
+                html = html.replace(/<script[^>]*>[^<]*adsbygoogle[^<]*<\/script>/gi, '');
+                html = html.replace(/<ins[^>]*adsbygoogle[^>]*>[\s\S]*?<\/ins>/gi, '');
+                html = html.replace(/<div[^>]*ad-container[^>]*>[\s\S]*?<\/div>/gi, '');
+                html = html.replace(/<div[^>]*ad-adsense[^>]*>[\s\S]*?<\/div>/gi, '');
+                html = html.replace(/##AD##/g, '');
+                html = html.replace(/\(adsbygoogle\s*=\s*window\.adsbygoogle\s*\|\|\s*\[\]\)\.push\(\{\}\);?/g, '');
+                html = html.replace(/(<p>\s*(&nbsp;)?\s*<\/p>\s*){3,}/gi, '<p>&nbsp;</p>');
+
+                // 3) H2 뒤에 애드센스 삽입 (2번째, 4번째 H2 뒤)
+                const adBlock = '<div class="ad-adsense" style="margin:1.5em 0;text-align:center;">'
+                    + '<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-1646757278810260" crossorigin="anonymous"></script>'
+                    + '<ins class="adsbygoogle" style="display:block;text-align:center;" data-ad-layout="in-article" data-ad-format="fluid" data-ad-client="ca-pub-1646757278810260" data-ad-slot="3141593954"></ins>'
+                    + '<script>(adsbygoogle = window.adsbygoogle || []).push({});</script>'
+                    + '</div>';
+
+                let count = 0;
+                // H2 위치 찾기
+                const h2Pattern = /<h2[^>]*>[\s\S]*?<\/h2>/gi;
+                const h2Matches = [];
+                let m;
+                while ((m = h2Pattern.exec(html)) !== null) {
+                    h2Matches.push(m.index + m[0].length);
+                }
+
+                // 2번째, 4번째 H2 뒤에 삽입 (역순으로 삽입해야 인덱스 안 밀림)
+                const insertAfter = [3, 1]; // 0-indexed, 역순
+                for (const idx of insertAfter) {
+                    if (idx >= h2Matches.length) continue;
+                    const pos = h2Matches[idx];
+                    // H2 바로 뒤 첫 번째 </p> 찾기
+                    const nextP = html.indexOf('</p>', pos);
+                    if (nextP > 0) {
+                        const insertPos = nextP + 4;
+                        html = html.slice(0, insertPos) + adBlock + html.slice(insertPos);
+                        count++;
+                    }
+                }
+
+                editor.setContent(html);
+                return {replaced: replaced, ads: count};
+            }""", unsplash_urls)
+            replaced = result_info.get("replaced", 0) if result_info else 0
+            ad_count = result_info.get("ads", 0) if result_info else 0
+            logger.info(f"이미지 교체 {replaced}개, 애드센스 삽입 {ad_count}개")
+            steps.append({"step": "이미지 교체 + 애드센스", "status": "success", "replaced": replaced, "ads": ad_count})
 
             # TinyMCE 변경 알림
             page.evaluate("""() => {
@@ -478,7 +541,7 @@ def edit_latest_draft(blog_id: str, account_id: str = None) -> dict:
             }""")
             time.sleep(1)
 
-            # ── 5) 임시저장 ──
+            # ── 6) 임시저장 ──
             _click_draft_save(page)
             time.sleep(3)
             steps.append({"step": "임시저장", "status": "success"})
@@ -499,7 +562,7 @@ def edit_latest_draft(blog_id: str, account_id: str = None) -> dict:
                     "h2_count": final_h2,
                     "body_length": body_len,
                     "adsense_count": has_adsense,
-                    "images_replaced": replaced,
+                    "images_replaced": result_info.get("replaced", 0) if result_info else 0,
                 },
             }
             logger.info(f"edit_latest_draft 완료: {result['summary']}")
@@ -930,13 +993,21 @@ def _click_draft_save(page):
         except Exception:
             continue
 
-    # JavaScript로 임시저장 버튼 찾기
+    # JavaScript로 임시저장/완료 버튼 찾기
     try:
         clicked = page.evaluate("""() => {
             const buttons = document.querySelectorAll('button, a, input[type="button"]');
             for (const btn of buttons) {
                 const text = btn.textContent.trim();
                 if (text === '임시저장' || text.includes('임시저장')) {
+                    btn.click();
+                    return true;
+                }
+            }
+            // 완료 버튼 (이미 발행된 글 수정 시)
+            for (const btn of buttons) {
+                const text = btn.textContent.trim();
+                if (text === '완료') {
                     btn.click();
                     return true;
                 }
