@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """
-로컬 PC에서 실행하는 네이버 로그인 헬퍼.
+로컬 PC에서 실행하는 블로그 로그인 헬퍼 (네이버 + 티스토리).
 
 사용법:
     python login_helper.py --account baremi542
+    python login_helper.py --account baremi542 --platform naver
+    python login_helper.py --account goodisak --platform tistory
     python login_helper.py --account baremi542 --server https://app.baremi542.com
 """
 
@@ -28,27 +30,48 @@ except ImportError:
 
 
 DEFAULT_SERVER = "https://app.baremi542.com"
-LOGIN_URL = "https://nid.naver.com/nidlogin.login"
+
+PLATFORM_CONFIG = {
+    "naver": {
+        "login_url": "https://nid.naver.com/nidlogin.login",
+        "auth_cookies": ["NID_AUT", "NID_SES"],
+        "blog_url": lambda aid: f"https://blog.naver.com/{aid}",
+        "login_check": lambda url: "nidlogin" in url or "nid.naver.com" in url,
+    },
+    "tistory": {
+        "login_url": "https://www.tistory.com/auth/login",
+        "auth_cookies": ["TSSESSION", "TSESSION"],
+        "blog_url": lambda aid: f"https://{aid}.tistory.com/manage",
+        "login_check": lambda url: "accounts.kakao.com" in url or "/auth/login" in url,
+    },
+}
 
 
 def main():
-    parser = argparse.ArgumentParser(description="네이버 로그인 → 쿠키 자동 전송")
-    parser.add_argument("--account", required=True, help="계정 ID (예: baremi542)")
-    parser.add_argument("--server", default=DEFAULT_SERVER, help=f"서버 URL (기본: {DEFAULT_SERVER})")
+    parser = argparse.ArgumentParser(description="블로그 로그인 → 쿠키 자동 전송")
+    parser.add_argument("--account", required=True, help="계정/블로그 ID (예: baremi542)")
+    parser.add_argument("--platform", default="naver", choices=["naver", "tistory"],
+                        help="플랫폼 (기본: naver)")
+    parser.add_argument("--server", default=DEFAULT_SERVER,
+                        help=f"서버 URL (기본: {DEFAULT_SERVER})")
     args = parser.parse_args()
 
     account_id = args.account
+    platform = args.platform
     server_url = args.server.rstrip("/")
+    config = PLATFORM_CONFIG[platform]
 
-    print(f"[1/4] 네이버 로그인 창을 엽니다...")
+    platform_name = "네이버" if platform == "naver" else "티스토리"
+    print(f"[1/4] {platform_name} 로그인 창을 엽니다...")
     print(f"      계정: {account_id}")
+    print(f"      플랫폼: {platform}")
     print(f"      서버: {server_url}")
     print()
 
     with sync_playwright() as p:
         browser = p.chromium.launch(
             headless=False,
-            channel="",          # 시스템 Chrome 사용 방지, Playwright 내장 Chromium 강제
+            channel="",
             args=["--disable-extensions", "--no-first-run"],
         )
         context = browser.new_context(
@@ -63,7 +86,7 @@ def main():
         page = context.new_page()
 
         try:
-            page.goto(LOGIN_URL, wait_until="domcontentloaded")
+            page.goto(config["login_url"], wait_until="domcontentloaded")
             print(f"[2/4] 로그인 페이지가 열렸습니다. 브라우저에서 로그인하세요.")
             print(f"      (브라우저를 닫지 마세요!)")
             print()
@@ -79,24 +102,30 @@ def main():
 
             # 블로그 페이지 방문 → 로그인 상태 + 블로그 쿠키 수집
             print(f"[3/4] 로그인 상태를 확인합니다...")
-            page.goto(f"https://blog.naver.com/{account_id}", wait_until="domcontentloaded")
+            blog_url = config["blog_url"](account_id)
+            page.goto(blog_url, wait_until="domcontentloaded")
             time.sleep(2)
 
-            # 로그인 여부 확인: 로그인 페이지로 리다이렉트되면 실패
-            if "nidlogin" in page.url or "nid.naver.com" in page.url:
+            # 로그인 여부 확인
+            if config["login_check"](page.url):
                 print(f"[실패] 로그인되지 않았습니다. 브라우저에서 로그인을 완료했는지 확인하세요.")
                 return
 
             all_cookies = context.cookies()
-            # NID_AUT 쿠키 존재 확인
             cookie_names = {c["name"] for c in all_cookies}
-            if "NID_AUT" not in cookie_names and "NID_SES" not in cookie_names:
-                print(f"[실패] 로그인 쿠키가 없습니다. 다시 시도해주세요.")
-                return
+            auth_found = any(ac in cookie_names for ac in config["auth_cookies"])
+
+            if not auth_found:
+                # URL 기반 확인 — 관리 페이지에 접근했으면 로그인 성공
+                if platform == "tistory" and "/manage" in page.url:
+                    pass  # 로그인 OK
+                else:
+                    print(f"[실패] 로그인 쿠키가 없습니다. 다시 시도해주세요.")
+                    return
 
             print(f"      로그인 확인 완료! 쿠키 {len(all_cookies)}개 수집")
 
-            # 서버로 쿠키 전송 (X-Cookie-Token 헤더로 인증)
+            # 서버로 쿠키 전송
             print(f"[4/4] 서버로 쿠키를 전송합니다...")
             api_url = f"{server_url}/api/accounts/{account_id}/cookie"
 
