@@ -105,12 +105,34 @@ def main():
 
             # 블로그 페이지 방문 → 로그인 상태 + 블로그 쿠키 수집
             print(f"[3/4] 로그인 상태를 확인합니다...")
+            # 기본 블로그 관리 페이지 방문
             if blog_domain:
                 blog_url = f"https://{blog_domain}/manage"
             else:
                 blog_url = config["blog_url"](account_id)
             page.goto(blog_url, wait_until="domcontentloaded")
             time.sleep(2)
+
+            # 티스토리: 소유한 다른 블로그 관리 페이지도 방문하여 쿠키 수집
+            if platform == "tistory":
+                visited = set()
+                visited.add(blog_url)
+                # blog_domain 사용 시 account_id.tistory.com도 방문
+                if blog_domain:
+                    visited.add(f"https://{account_id}.tistory.com/manage")
+                # tistory.com 메인 관리 페이지 방문 (루트 쿠키 수집)
+                for extra_url in [
+                    "https://www.tistory.com/manage",
+                    f"https://{account_id}.tistory.com/manage",
+                ]:
+                    if extra_url not in visited:
+                        try:
+                            print(f"      추가 쿠키 수집: {extra_url}")
+                            page.goto(extra_url, wait_until="domcontentloaded")
+                            time.sleep(2)
+                            visited.add(extra_url)
+                        except Exception:
+                            pass
 
             # 로그인 여부 확인
             if config["login_check"](page.url):
