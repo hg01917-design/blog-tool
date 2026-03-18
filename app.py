@@ -3354,4 +3354,5 @@ _init_scheduler()
 
 if __name__ == "__main__":
     os.chdir(_APP_DIR)
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5001)))
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5001)),
+            use_reloader=not LOCAL_MODE)
