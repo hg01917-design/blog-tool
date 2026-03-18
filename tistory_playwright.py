@@ -34,20 +34,11 @@ def _is_local_mode() -> bool:
     return os.environ.get("LOCAL_MODE", "").lower() == "true"
 
 
-def _get_local_chrome_profile() -> str:
-    """로컬 크롬 프로필 경로를 자동 감지합니다."""
-    import platform
-    system = platform.system()
-    if system == "Windows":
-        username = os.environ.get("USERNAME", os.environ.get("USER", ""))
-        path = f"C:\\Users\\{username}\\AppData\\Local\\Google\\Chrome\\User Data"
-    elif system == "Darwin":
-        path = os.path.expanduser("~/Library/Application Support/Google/Chrome")
-    else:  # Linux
-        path = os.path.expanduser("~/.config/google-chrome")
-    if os.path.isdir(path):
-        return path
-    raise RuntimeError(f"로컬 크롬 프로필을 찾을 수 없습니다: {path}")
+def _get_local_profile_dir() -> str:
+    """blog-tool 전용 브라우저 프로필 경로를 반환합니다. 없으면 생성."""
+    path = os.path.expanduser("~/blog-tool-profile")
+    os.makedirs(path, exist_ok=True)
+    return path
 
 
 def _get_blog_ids() -> list[str]:
@@ -73,12 +64,12 @@ def _connect_browser(p):
 
 
 def _open_local_context(p):
-    """로컬 크롬 프로필로 persistent context를 엽니다."""
-    chrome_profile = _get_local_chrome_profile()
+    """blog-tool 전용 프로필로 persistent context를 엽니다.
+    Playwright 번들 Chromium 사용 (로컬 Chrome SingletonLock 충돌 방지)."""
+    profile_dir = _get_local_profile_dir()
     context = p.chromium.launch_persistent_context(
-        user_data_dir=chrome_profile,
+        user_data_dir=profile_dir,
         headless=False,
-        channel="chrome",
         viewport={"width": 1280, "height": 900},
         args=["--no-sandbox", "--disable-dev-shm-usage"],
     )
@@ -98,13 +89,9 @@ def _get_context_and_page(browser, p=None):
 
 
 def cookies_exist(blog_id: str) -> bool:
-    """로그인 상태 확인. LOCAL_MODE면 로컬 크롬 프로필 존재 여부 확인."""
+    """로그인 상태 확인. LOCAL_MODE면 blog-tool-profile 존재 여부 확인."""
     if _is_local_mode():
-        try:
-            _get_local_chrome_profile()
-            return True
-        except RuntimeError:
-            return False
+        return os.path.isdir(_get_local_profile_dir())
     try:
         import urllib.request
         resp = urllib.request.urlopen(f"{CDP_URL}/json/version", timeout=3)
