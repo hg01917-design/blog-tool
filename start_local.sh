@@ -58,21 +58,26 @@ if lsof -i:9222 -sTCP:LISTEN &> /dev/null; then
     echo "[4/5] 크롬이 이미 9222 포트로 실행 중 (스킵)"
 else
     echo "[4/5] 크롬을 디버그 모드로 실행 중..."
-    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
-        --remote-debugging-port=9222 \
-        --no-first-run \
-        --no-default-browser-check \
-        &> /dev/null &
-    sleep 2
-fi
+    open -a "Google Chrome" --args --remote-debugging-port=9222 &
 
-# 크롬 CDP 포트 확인
-if lsof -i:9222 -sTCP:LISTEN &> /dev/null; then
-    echo "[4/5] ✅ Chrome CDP ready (포트 9222)"
-else
-    echo "[4/5] ❌ Chrome not running on port 9222"
-    echo "크롬이 디버그 모드로 시작되지 않았습니다. 크롬을 수동으로 실행해주세요."
-    exit 1
+    # 포트 열릴 때까지 최대 10초 대기
+    CDP_READY=false
+    for i in $(seq 1 10); do
+        if lsof -i:9222 -sTCP:LISTEN &> /dev/null; then
+            CDP_READY=true
+            break
+        fi
+        echo "[4/5] 크롬 시작 대기 중... (${i}/10)"
+        sleep 1
+    done
+
+    if [ "$CDP_READY" = true ]; then
+        echo "[4/5] ✅ Chrome CDP ready (포트 9222)"
+    else
+        echo "[4/5] ❌ Chrome not running on port 9222"
+        echo "크롬이 디버그 모드로 시작되지 않았습니다. 크롬을 수동으로 실행해주세요."
+        exit 1
+    fi
 fi
 
 echo
