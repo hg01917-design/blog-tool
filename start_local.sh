@@ -59,7 +59,8 @@ if lsof -i:9222 -sTCP:LISTEN &> /dev/null; then
 else
     echo "[4/5] 크롬을 디버그 모드로 실행 중..."
     CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-    "$CHROME" --remote-debugging-port=9222 --no-first-run --no-default-browser-check &
+    CHROME_PROFILE=$(ls ~/Library/Application\ Support/Google/Chrome/ | grep -E "^(Default|Profile [0-9]+)$" | head -1)
+    "$CHROME" --remote-debugging-port=9222 --no-first-run --no-default-browser-check --profile-directory="$CHROME_PROFILE" &
 
     # 포트 열릴 때까지 최대 10초 대기
     CDP_READY=false
