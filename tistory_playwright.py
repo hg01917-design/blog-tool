@@ -307,6 +307,12 @@ def publish_to_tistory(blog_id: str, title: str, body_html: str, tags: list[str]
                     page.close()
                 except Exception:
                     pass
+            # 로컬 모드에서는 persistent context도 닫기
+            if _is_local_mode():
+                try:
+                    context.close()
+                except Exception:
+                    pass
 
 
 def edit_latest_draft(blog_id: str, account_id: str = None, category: str = "it") -> dict:
@@ -653,6 +659,11 @@ def edit_latest_draft(blog_id: str, account_id: str = None, category: str = "it"
             if page:
                 try:
                     page.close()
+                except Exception:
+                    pass
+            if _is_local_mode():
+                try:
+                    context.close()
                 except Exception:
                     pass
 
