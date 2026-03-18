@@ -12,7 +12,6 @@ import requests as http_requests
 from functools import wraps
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 from dotenv import load_dotenv
-from werkzeug.security import check_password_hash, generate_password_hash
 import anthropic
 
 # app.py가 있는 디렉토리를 sys.path에 추가 (CWD 무관하게 import 보장)
@@ -28,6 +27,8 @@ app.config["SESSION_COOKIE_NAME"] = "wordpress_autoblog"
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_SECURE"] = os.environ.get("SESSION_COOKIE_SECURE", "").lower() == "true"
+
+LOCAL_MODE = os.environ.get("LOCAL_MODE", "").lower() == "true"
 
 # ──────────────────────────────────────────────
 #  인증 설정
@@ -73,25 +74,12 @@ def _save_env_value(key, value):
         f.writelines(lines)
 
 
-def _load_password_from_env():
-    """`.env` 파일에서 비밀번호 설정을 매번 읽어온다. (멀티워커 안전)"""
-    pw_hash = ""
-    pw_plain = ""
-    if os.path.exists(_ENV_PATH):
-        with open(_ENV_PATH, "r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if line.startswith("APP_PASSWORD_HASH="):
-                    pw_hash = line.split("=", 1)[1]
-                elif line.startswith("APP_PASSWORD="):
-                    pw_plain = line.split("=", 1)[1]
-    return pw_hash, pw_plain
-
-
 def login_required(f):
     """로그인 안 된 요청을 /login으로 리다이렉트하는 데코레이터."""
     @wraps(f)
     def decorated(*args, **kwargs):
+        if LOCAL_MODE:
+            session["authenticated"] = True
         if not session.get("authenticated"):
             if request.is_json or request.headers.get("X-Requested-With") == "XMLHttpRequest":
                 return jsonify({"error": "로그인이 필요합니다"}), 401
@@ -102,19 +90,13 @@ def login_required(f):
 
 @app.route("/login", methods=["GET", "POST"])
 def login_page():
+    if LOCAL_MODE:
+        session["authenticated"] = True
+        session.permanent = True
+        return redirect(url_for("index"))
     if session.get("authenticated"):
         return redirect(url_for("index"))
-
-    error = None
-    if request.method == "POST":
-        password = request.form.get("password", "")
-        if _check_password(password):
-            session["authenticated"] = True
-            session.permanent = True
-            return redirect(request.args.get("next") or url_for("index"))
-        error = "비밀번호가 틀렸습니다"
-
-    return render_template("login.html", error=error)
+    return render_template("login.html", error=None)
 
 
 @app.route("/logout")
@@ -123,59 +105,12 @@ def logout():
     return redirect(url_for("login_page"))
 
 
-def _check_password(password: str) -> bool:
-    """`.env`에서 비밀번호를 읽어서 비교. 해시 우선, 평문 폴백."""
-    if not password:
-        return False
-    pw_hash, pw_plain = _load_password_from_env()
-    if pw_hash:
-        return check_password_hash(pw_hash, password)
-    if pw_plain:
-        return secrets.compare_digest(password, pw_plain)
-    return False
-
-
-def _update_env_password(new_password: str):
-    """`.env` 파일의 비밀번호를 해시로 교체."""
-    new_hash = generate_password_hash(new_password)
-
-    if os.path.exists(_ENV_PATH):
-        with open(_ENV_PATH, "r", encoding="utf-8") as f:
-            lines = f.readlines()
-    else:
-        lines = []
-
-    # 기존 APP_PASSWORD / APP_PASSWORD_HASH 줄 제거
-    lines = [l for l in lines if not l.startswith("APP_PASSWORD_HASH=") and not l.startswith("APP_PASSWORD=")]
-
-    # 해시 방식으로 저장 (평문 제거)
-    lines.append(f"APP_PASSWORD_HASH={new_hash}\n")
-
-    with open(_ENV_PATH, "w", encoding="utf-8") as f:
-        f.writelines(lines)
-
-
 @app.route("/settings", methods=["GET", "POST"])
 def settings_page():
     result = None
     action = request.form.get("action", "")
 
-    if request.method == "POST" and action == "change_password":
-        current = request.form.get("current_password", "")
-        new_pw = request.form.get("new_password", "")
-        confirm = request.form.get("confirm_password", "")
-
-        if not _check_password(current):
-            result = {"ok": False, "msg": "현재 비밀번호가 틀렸습니다"}
-        elif len(new_pw) < 4:
-            result = {"ok": False, "msg": "새 비밀번호는 4자 이상이어야 합니다"}
-        elif new_pw != confirm:
-            result = {"ok": False, "msg": "새 비밀번호가 일치하지 않습니다"}
-        else:
-            _update_env_password(new_pw)
-            result = {"ok": True, "msg": "비밀번호가 변경되었습니다"}
-
-    elif request.method == "POST" and action == "change_model":
+    if request.method == "POST" and action == "change_model":
         model_key = request.form.get("ai_model", "")
         if model_key in AVAILABLE_MODELS:
             _save_env_value("AI_MODEL", AVAILABLE_MODELS[model_key])
@@ -200,6 +135,9 @@ app.register_blueprint(keywords_bp)
 @app.before_request
 def require_login():
     """로그인/정적 파일 외 모든 요청에 인증 강제."""
+    if LOCAL_MODE:
+        session["authenticated"] = True
+        return
     allowed = ("login_page", "static", "indexnow_key_file")
     if request.endpoint in allowed:
         return
