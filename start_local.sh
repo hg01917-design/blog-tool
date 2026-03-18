@@ -57,6 +57,10 @@ echo "[4/5] 크롬 디버그 모드 확인..."
 if lsof -i:9222 -sTCP:LISTEN &> /dev/null; then
     echo "[4/5] 크롬이 이미 9222 포트로 실행 중 (스킵)"
 else
+    echo "[4/5] 기존 크롬 프로세스 종료 중..."
+    pkill -f "Google Chrome" 2>/dev/null || true
+    sleep 2
+
     echo "[4/5] 크롬을 디버그 모드로 실행 중..."
     CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
     CHROME_PROFILE=$(ls ~/Library/Application\ Support/Google/Chrome/ | grep -E "^(Default|Profile [0-9]+)$" | head -1)
