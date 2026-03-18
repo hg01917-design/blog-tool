@@ -34,11 +34,14 @@ def _is_local_mode() -> bool:
     return os.environ.get("LOCAL_MODE", "").lower() == "true"
 
 
-def _get_local_profile_dir() -> str:
-    """blog-tool 전용 브라우저 프로필 경로를 반환합니다. 없으면 생성."""
-    path = os.path.expanduser("~/blog-tool-profile")
-    os.makedirs(path, exist_ok=True)
-    return path
+def _connect_local_cdp(p):
+    """LOCAL_MODE에서 CDP로 로컬 크롬에 연결합니다."""
+    try:
+        return p.chromium.connect_over_cdp(CDP_URL)
+    except Exception as e:
+        raise RuntimeError(
+            "크롬을 디버그 모드로 실행해주세요 (start_local.sh 실행): " + str(e)
+        )
 
 
 def _get_blog_ids() -> list[str]:
@@ -50,9 +53,9 @@ def _get_blog_ids() -> list[str]:
 
 
 def _connect_browser(p):
-    """브라우저에 연결합니다. LOCAL_MODE면 로컬 크롬 프로필 사용."""
+    """브라우저에 CDP로 연결합니다."""
     if _is_local_mode():
-        return None  # 로컬 모드에서는 persistent context 사용
+        return _connect_local_cdp(p)
     try:
         browser = p.chromium.connect_over_cdp(CDP_URL)
         return browser
@@ -63,35 +66,22 @@ def _connect_browser(p):
         )
 
 
-def _open_local_context(p):
-    """blog-tool 전용 프로필로 persistent context를 엽니다.
-    Playwright 번들 Chromium 사용 (로컬 Chrome SingletonLock 충돌 방지)."""
-    profile_dir = _get_local_profile_dir()
-    context = p.chromium.launch_persistent_context(
-        user_data_dir=profile_dir,
-        headless=False,
-        viewport={"width": 1280, "height": 900},
-        args=["--no-sandbox", "--disable-dev-shm-usage"],
-    )
-    return context
-
-
 def _get_context_and_page(browser, p=None):
-    """브라우저에서 context와 새 페이지를 가져옵니다.
-    LOCAL_MODE면 로컬 크롬 persistent context를 사용합니다."""
-    if _is_local_mode() and p:
-        context = _open_local_context(p)
-        page = context.pages[0] if context.pages else context.new_page()
-        return context, page
+    """브라우저에서 context와 새 페이지를 가져옵니다."""
     context = browser.contexts[0] if browser.contexts else browser.new_context()
     page = context.new_page()
     return context, page
 
 
 def cookies_exist(blog_id: str) -> bool:
-    """로그인 상태 확인. LOCAL_MODE면 blog-tool-profile 존재 여부 확인."""
+    """로그인 상태 확인. LOCAL_MODE면 CDP 연결 확인."""
     if _is_local_mode():
-        return os.path.isdir(_get_local_profile_dir())
+        try:
+            import urllib.request
+            resp = urllib.request.urlopen(f"{CDP_URL}/json/version", timeout=3)
+            return resp.status == 200
+        except Exception:
+            return False
     try:
         import urllib.request
         resp = urllib.request.urlopen(f"{CDP_URL}/json/version", timeout=3)
@@ -292,12 +282,6 @@ def publish_to_tistory(blog_id: str, title: str, body_html: str, tags: list[str]
             if page:
                 try:
                     page.close()
-                except Exception:
-                    pass
-            # 로컬 모드에서는 persistent context도 닫기
-            if _is_local_mode():
-                try:
-                    context.close()
                 except Exception:
                     pass
 
@@ -646,11 +630,6 @@ def edit_latest_draft(blog_id: str, account_id: str = None, category: str = "it"
             if page:
                 try:
                     page.close()
-                except Exception:
-                    pass
-            if _is_local_mode():
-                try:
-                    context.close()
                 except Exception:
                     pass
 

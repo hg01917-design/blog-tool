@@ -27,11 +27,14 @@ def _is_local_mode() -> bool:
     return os.environ.get("LOCAL_MODE", "").lower() == "true"
 
 
-def _get_local_profile_dir() -> str:
-    """blog-tool 전용 브라우저 프로필 경로를 반환합니다. 없으면 생성."""
-    path = os.path.expanduser("~/blog-tool-profile")
-    os.makedirs(path, exist_ok=True)
-    return path
+def _connect_local_cdp(p):
+    """LOCAL_MODE에서 CDP로 로컬 크롬에 연결합니다."""
+    try:
+        return p.chromium.connect_over_cdp(CDP_URL)
+    except Exception as e:
+        raise RuntimeError(
+            "크롬을 디버그 모드로 실행해주세요 (start_local.sh 실행): " + str(e)
+        )
 
 
 def _get_session(account_id: str) -> dict:
@@ -92,25 +95,16 @@ def _login_worker(account_id: str, kakao_id: str, kakao_pw: str):
     try:
         with sync_playwright() as p:
             if _is_local_mode():
-                profile_dir = _get_local_profile_dir()
-                context = p.chromium.launch_persistent_context(
-                    user_data_dir=profile_dir,
-                    headless=False,
-                    viewport={"width": 1280, "height": 900},
-                    args=["--no-sandbox", "--disable-dev-shm-usage"],
-                )
-                page = context.pages[0] if context.pages else context.new_page()
+                browser = _connect_local_cdp(p)
             else:
                 browser = p.chromium.connect_over_cdp(CDP_URL)
-                context = browser.contexts[0] if browser.contexts else browser.new_context()
-                page = context.new_page()
+            context = browser.contexts[0] if browser.contexts else browser.new_context()
+            page = context.new_page()
 
             try:
                 _do_login(account_id, page, kakao_id, kakao_pw)
             finally:
                 page.close()
-                if _is_local_mode():
-                    context.close()
 
     except Exception as e:
         logger.exception("로그인 워커 에러")

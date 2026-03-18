@@ -51,21 +51,30 @@ elif ! grep -q "LOCAL_MODE" .env; then
     echo "[설정] LOCAL_MODE=true 추가"
 fi
 
+# 크롬 디버그 모드 실행 (CDP 9222 포트)
 echo
-echo "[4/4] Flask 서버 시작 (localhost:5000)"
+echo "[4/5] 크롬 디버그 모드 확인..."
+if lsof -i:9222 -sTCP:LISTEN &> /dev/null; then
+    echo "[4/5] 크롬이 이미 9222 포트로 실행 중 (스킵)"
+else
+    echo "[4/5] 크롬을 디버그 모드로 실행 중..."
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+        --remote-debugging-port=9222 \
+        --no-first-run \
+        --no-default-browser-check \
+        &> /dev/null &
+    sleep 2
+    echo "[4/5] 크롬 디버그 모드 실행 완료 (포트 9222)"
+fi
+
+echo
+echo "[5/5] Flask 서버 시작 (localhost:5001)"
 echo
 echo "========================================"
-echo "  브라우저에서 http://localhost:5000 접속"
+echo "  브라우저에서 http://localhost:5001 접속"
 echo "  종료: Ctrl+C"
 echo "========================================"
 echo
-
-# 브라우저 자동 열기 (백그라운드)
-if [[ "$OSTYPE" == "darwin"* ]]; then
-    open "http://localhost:5000" &
-elif command -v xdg-open &> /dev/null; then
-    xdg-open "http://localhost:5000" &
-fi
 
 # Flask 실행
 export LOCAL_MODE=true

@@ -39,11 +39,17 @@ def _is_local_mode() -> bool:
     return os.environ.get("LOCAL_MODE", "").lower() == "true"
 
 
-def _get_local_profile_dir() -> str:
-    """blog-tool 전용 브라우저 프로필 경로를 반환합니다. 없으면 생성."""
-    path = os.path.expanduser("~/blog-tool-profile")
-    os.makedirs(path, exist_ok=True)
-    return path
+CDP_URL = "http://localhost:9222"
+
+
+def _connect_local_cdp(p):
+    """LOCAL_MODE에서 CDP로 로컬 크롬에 연결합니다."""
+    try:
+        return p.chromium.connect_over_cdp(CDP_URL)
+    except Exception as e:
+        raise RuntimeError(
+            "크롬을 디버그 모드로 실행해주세요 (start_local.sh 실행): " + str(e)
+        )
 
 
 def _get_cookie_path() -> str:
@@ -61,15 +67,10 @@ def _get_blog_id() -> str:
 
 def _open_persistent_context(p, account_id: str = "daonna525", headless: bool = True):
     """Persistent browser context를 열어 반환합니다.
-    LOCAL_MODE면 로컬 크롬 프로필을 사용합니다."""
+    LOCAL_MODE면 CDP로 로컬 크롬에 연결합니다."""
     if _is_local_mode():
-        profile_dir = _get_local_profile_dir()
-        context = p.chromium.launch_persistent_context(
-            user_data_dir=profile_dir,
-            headless=False,
-            viewport={"width": 1280, "height": 900},
-            args=["--no-sandbox", "--disable-dev-shm-usage"],
-        )
+        browser = _connect_local_cdp(p)
+        context = browser.contexts[0] if browser.contexts else browser.new_context()
         return context
     profile_dir = _get_profile_dir(account_id)
     os.makedirs(profile_dir, exist_ok=True)
@@ -84,9 +85,14 @@ def _open_persistent_context(p, account_id: str = "daonna525", headless: bool = 
 
 
 def cookies_exist(account_id: str = "daonna525") -> bool:
-    """프로파일 디렉토리가 존재하는지 확인. LOCAL_MODE면 로컬 크롬 확인."""
+    """프로파일 디렉토리가 존재하는지 확인. LOCAL_MODE면 CDP 연결 확인."""
     if _is_local_mode():
-        return os.path.isdir(_get_local_profile_dir())
+        try:
+            import urllib.request
+            resp = urllib.request.urlopen(f"{CDP_URL}/json/version", timeout=3)
+            return resp.status == 200
+        except Exception:
+            return False
     profile_dir = _get_profile_dir(account_id)
     if os.path.isdir(profile_dir):
         return True
@@ -126,7 +132,13 @@ def login_and_save_cookies(timeout_sec: int = 120, account_id: str = "daonna525"
         except Exception as e:
             return {"success": False, "error": str(e)}
         finally:
-            context.close()
+            if _is_local_mode():
+                try:
+                    page.close()
+                except Exception:
+                    pass
+            else:
+                context.close()
 
 
 def upload_cookies(cookies_json: str, account_id: str = "daonna525") -> dict:
@@ -138,13 +150,20 @@ def upload_cookies(cookies_json: str, account_id: str = "daonna525") -> dict:
 
         with sync_playwright() as p:
             context = _open_persistent_context(p, account_id, headless=True)
+            page = None
             try:
                 context.add_cookies(cookies)
                 page = context.pages[0] if context.pages else context.new_page()
                 page.goto("https://www.naver.com", wait_until="domcontentloaded")
                 time.sleep(2)
             finally:
-                context.close()
+                if page and _is_local_mode():
+                    try:
+                        page.close()
+                    except Exception:
+                        pass
+                if not _is_local_mode():
+                    context.close()
 
         return {"success": True, "cookie_count": len(cookies)}
     except json.JSONDecodeError as e:
@@ -458,7 +477,13 @@ def publish_to_naver(title: str, body_html: str, tags: list[str],
                         os.unlink(f)
                 except Exception:
                     pass
-            context.close()
+            if page:
+                try:
+                    page.close()
+                except Exception:
+                    pass
+            if not _is_local_mode():
+                context.close()
 
 
 def _translate_to_english(text: str) -> str:
