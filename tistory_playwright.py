@@ -26,8 +26,28 @@ _last_publish_time = 0
 PUBLISH_INTERVAL = 30  # 초
 
 
-def _get_cookie_path(blog_id: str) -> str:
-    return os.path.join(_APP_DIR, "data", f"tistory_cookies_{blog_id}.json")
+CDP_URL = "http://127.0.0.1:9222"
+
+
+def _is_local_mode() -> bool:
+    """LOCAL_MODE 환경변수가 true인지 확인합니다."""
+    return os.environ.get("LOCAL_MODE", "").lower() == "true"
+
+
+def _get_local_chrome_profile() -> str:
+    """로컬 크롬 프로필 경로를 자동 감지합니다."""
+    import platform
+    system = platform.system()
+    if system == "Windows":
+        username = os.environ.get("USERNAME", os.environ.get("USER", ""))
+        path = f"C:\\Users\\{username}\\AppData\\Local\\Google\\Chrome\\User Data"
+    elif system == "Darwin":
+        path = os.path.expanduser("~/Library/Application Support/Google/Chrome")
+    else:  # Linux
+        path = os.path.expanduser("~/.config/google-chrome")
+    if os.path.isdir(path):
+        return path
+    raise RuntimeError(f"로컬 크롬 프로필을 찾을 수 없습니다: {path}")
 
 
 def _get_blog_ids() -> list[str]:
@@ -38,92 +58,86 @@ def _get_blog_ids() -> list[str]:
     return [b.strip() for b in raw.split(",") if b.strip()]
 
 
+def _connect_browser(p):
+    """브라우저에 연결합니다. LOCAL_MODE면 로컬 크롬 프로필 사용."""
+    if _is_local_mode():
+        return None  # 로컬 모드에서는 persistent context 사용
+    try:
+        browser = p.chromium.connect_over_cdp(CDP_URL)
+        return browser
+    except Exception as e:
+        raise RuntimeError(
+            f"브라우저 데몬에 연결할 수 없습니다 ({CDP_URL}). "
+            f"browser_daemon.py가 실행 중인지 확인하세요: {e}"
+        )
+
+
+def _open_local_context(p):
+    """로컬 크롬 프로필로 persistent context를 엽니다."""
+    chrome_profile = _get_local_chrome_profile()
+    context = p.chromium.launch_persistent_context(
+        user_data_dir=chrome_profile,
+        headless=False,
+        channel="chrome",
+        viewport={"width": 1280, "height": 900},
+        args=["--no-sandbox", "--disable-dev-shm-usage"],
+    )
+    return context
+
+
+def _get_context_and_page(browser, p=None):
+    """브라우저에서 context와 새 페이지를 가져옵니다.
+    LOCAL_MODE면 로컬 크롬 persistent context를 사용합니다."""
+    if _is_local_mode() and p:
+        context = _open_local_context(p)
+        page = context.pages[0] if context.pages else context.new_page()
+        return context, page
+    context = browser.contexts[0] if browser.contexts else browser.new_context()
+    page = context.new_page()
+    return context, page
+
+
 def cookies_exist(blog_id: str) -> bool:
-    """쿠키 파일이 존재하는지 확인."""
-    path = _get_cookie_path(blog_id)
-    return os.path.exists(path) and os.path.getsize(path) > 10
+    """로그인 상태 확인. LOCAL_MODE면 로컬 크롬 프로필 존재 여부 확인."""
+    if _is_local_mode():
+        try:
+            _get_local_chrome_profile()
+            return True
+        except RuntimeError:
+            return False
+    try:
+        import urllib.request
+        resp = urllib.request.urlopen(f"{CDP_URL}/json/version", timeout=3)
+        return resp.status == 200
+    except Exception:
+        return False
 
 
 def login_and_save_cookies(blog_id: str, timeout_sec: int = 120) -> dict:
-    """브라우저를 열어 카카오 계정으로 수동 로그인 후 쿠키를 저장합니다.
-
-    headless=False로 브라우저를 열고, 사용자가 로그인할 때까지 대기합니다.
-    로그인 완료 후 쿠키를 JSON 파일로 저장합니다.
-
-    Returns:
-        {"success": True} 또는 {"success": False, "error": "..."}
+    """상시 실행 브라우저에서 카카오 로그인을 수행합니다.
+    server_login.py를 사용하세요.
     """
-    cookie_path = _get_cookie_path(blog_id)
-    os.makedirs(os.path.dirname(cookie_path), exist_ok=True)
-
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False)
-        context = browser.new_context(
-            viewport={"width": 1280, "height": 900},
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/131.0.0.0 Safari/537.36"
-            ),
-        )
-        page = context.new_page()
-
-        try:
-            # 티스토리 로그인 페이지로 이동
-            page.goto("https://www.tistory.com/auth/login", wait_until="domcontentloaded")
-            logger.info("티스토리 로그인 페이지 열림. 카카오 계정으로 수동 로그인을 진행하세요.")
-
-            # 로그인 완료 대기: tistory.com 쿠키 중 로그인 세션 쿠키 감지
-            deadline = time.time() + timeout_sec
-            logged_in = False
-            while time.time() < deadline:
-                cookies = context.cookies()
-                cookie_names = {c["name"] for c in cookies}
-                # 티스토리 로그인 완료 시 TSSESSION 또는 TSESSION 쿠키가 설정됨
-                if "TSSESSION" in cookie_names or "TSESSION" in cookie_names:
-                    logged_in = True
-                    break
-                # URL이 tistory.com 메인으로 리디렉트되었는지도 확인
-                if "tistory.com" in page.url and "/auth/login" not in page.url:
-                    logged_in = True
-                    break
-                time.sleep(1)
-
-            if not logged_in:
-                return {"success": False, "error": f"{timeout_sec}초 내에 로그인이 완료되지 않았습니다."}
-
-            # 블로그 관리 페이지 방문하여 블로그 관련 쿠키도 수집
-            page.goto(f"https://{blog_id}.tistory.com/manage", wait_until="domcontentloaded")
-            time.sleep(2)
-
-            # 쿠키 저장
-            all_cookies = context.cookies()
-            with open(cookie_path, "w", encoding="utf-8") as f:
-                json.dump(all_cookies, f, ensure_ascii=False, indent=2)
-
-            logger.info(f"쿠키 저장 완료: {cookie_path} ({len(all_cookies)}개)")
-            return {"success": True, "cookie_count": len(all_cookies)}
-
-        except Exception as e:
-            return {"success": False, "error": str(e)}
-        finally:
-            browser.close()
+    return {"success": False, "error": "server_login.py를 사용해 로그인하세요."}
 
 
 def upload_cookies(blog_id: str, cookies_json: str) -> dict:
-    """JSON 문자열로 쿠키를 업로드하여 저장합니다.
-    서버가 headless 환경일 때 로컬에서 추출한 쿠키를 업로드하는 용도.
-    """
-    cookie_path = _get_cookie_path(blog_id)
-    os.makedirs(os.path.dirname(cookie_path), exist_ok=True)
-
+    """CDP 브라우저에 쿠키를 주입합니다."""
     try:
         cookies = json.loads(cookies_json)
         if not isinstance(cookies, list):
             return {"success": False, "error": "쿠키는 JSON 배열이어야 합니다."}
 
-        with open(cookie_path, "w", encoding="utf-8") as f:
-            json.dump(cookies, f, ensure_ascii=False, indent=2)
+        with sync_playwright() as p:
+            browser = _connect_browser(p)
+            context = browser.contexts[0] if browser.contexts else browser.new_context()
+            try:
+                context.add_cookies(cookies)
+                page = context.new_page()
+                page.goto("https://www.tistory.com", wait_until="domcontentloaded")
+                time.sleep(2)
+                page.close()
+            except Exception:
+                pass
 
         return {"success": True, "cookie_count": len(cookies)}
     except json.JSONDecodeError as e:
@@ -147,10 +161,10 @@ def publish_to_tistory(blog_id: str, title: str, body_html: str, tags: list[str]
     if not blog_id:
         return {"success": False, "error": "blog_id가 지정되지 않았습니다.", "steps": []}
 
-    # 쿠키는 account_id 기준으로 저장됨
+    # account_id 기준으로 프로파일 사용
     cookie_id = account_id or blog_id
     if not cookies_exist(cookie_id):
-        return {"success": False, "error": "티스토리 쿠키가 없습니다. 먼저 로그인해주세요.", "steps": []}
+        return {"success": False, "error": "브라우저 프로파일이 없습니다. 먼저 로그인해주세요.", "steps": []}
 
     # Rate limit
     now = time.time()
@@ -161,7 +175,6 @@ def publish_to_tistory(blog_id: str, title: str, body_html: str, tags: list[str]
 
     steps = []
     tmp_files = []  # 임시 이미지 파일 추적 (cleanup용)
-    cookie_path = _get_cookie_path(cookie_id)
 
     # ── Imagen 썸네일 생성 (제목 기반, 카테고리별 프롬프트) ──
     import re as _re
@@ -194,25 +207,12 @@ def publish_to_tistory(blog_id: str, title: str, body_html: str, tags: list[str]
             steps.append({"step": f"Unsplash 이미지({heading[:15]})", "status": "failed", "error": str(e)})
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        context = browser.new_context(
-            viewport={"width": 1280, "height": 900},
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/131.0.0.0 Safari/537.36"
-            ),
-        )
+        browser = _connect_browser(p)
 
         page = None
         try:
-            # 1) 쿠키 로드
-            with open(cookie_path, "r", encoding="utf-8") as f:
-                cookies = json.load(f)
-            context.add_cookies(cookies)
-            steps.append({"step": "쿠키 로드", "status": "success"})
-
-            page = context.new_page()
+            context, page = _get_context_and_page(browser, p)
+            steps.append({"step": "브라우저 연결", "status": "success"})
 
             # 2) 글쓰기 페이지 이동
             # 커스텀 도메인이면 그대로 사용, 아니면 .tistory.com 붙임
@@ -302,7 +302,11 @@ def publish_to_tistory(blog_id: str, title: str, body_html: str, tags: list[str]
                         os.unlink(f)
                 except Exception:
                     pass
-            browser.close()
+            if page:
+                try:
+                    page.close()
+                except Exception:
+                    pass
 
 
 def edit_latest_draft(blog_id: str, account_id: str = None, category: str = "it") -> dict:
@@ -317,32 +321,19 @@ def edit_latest_draft(blog_id: str, account_id: str = None, category: str = "it"
       5. 대표이미지 설정
       6. 임시저장
     """
-    cookie_id = account_id or blog_id
-    if not cookies_exist(cookie_id):
-        return {"success": False, "error": "쿠키가 없습니다."}
+    if not cookies_exist(account_id or blog_id):
+        return {"success": False, "error": "브라우저 데몬이 실행 중이 아닙니다."}
 
-    cookie_path = _get_cookie_path(cookie_id)
     steps = []
 
-    base_url = (f"https://{blog_id}" if "." in blog_id and not blog_id.endswith(".tistory.com")
+    base_url = (f"https://{blog_id}" if "." in blog_id
                 else f"https://{blog_id}.tistory.com")
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        context = browser.new_context(
-            viewport={"width": 1280, "height": 900},
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/131.0.0.0 Safari/537.36"
-            ),
-        )
+        browser = _connect_browser(p)
         page = None
         try:
-            with open(cookie_path, "r", encoding="utf-8") as f:
-                context.add_cookies(json.load(f))
-
-            page = context.new_page()
+            context, page = _get_context_and_page(browser, p)
 
             # ── 1) 글쓰기 페이지 → 복원 팝업에서 임시저장 글 불러오기 ──
             write_url = f"{base_url}/manage/newpost"
@@ -659,7 +650,11 @@ def edit_latest_draft(blog_id: str, account_id: str = None, category: str = "it"
             return {"success": False, "error": str(e), "steps": steps}
 
         finally:
-            browser.close()
+            if page:
+                try:
+                    page.close()
+                except Exception:
+                    pass
 
 
 # ─── 내부 헬퍼 함수들 ───
@@ -1310,7 +1305,7 @@ def _translate_to_english(text: str) -> str:
 
 
 def _generate_imagen_thumbnail(title: str, category: str = "it") -> str:
-    """Gemini Imagen으로 썸네일 이미지(800x800) 생성 → temp 파일 경로 반환."""
+    """Imagen 4로 썸네일 이미지(800x800) 생성 → temp 파일 경로 반환."""
     api_key = os.environ.get("GOOGLE_API_KEY", "")
     if not api_key:
         raise RuntimeError("GOOGLE_API_KEY가 설정되지 않았습니다.")
@@ -1330,35 +1325,35 @@ def _generate_imagen_thumbnail(title: str, category: str = "it") -> str:
 
     logger.info(f"[Imagen 썸네일] 프롬프트: {prompt}")
 
-    from google import genai
-    from google.genai import types as genai_types
-
-    client = genai.Client(api_key=api_key)
-    response = client.models.generate_content(
-        model="gemini-2.0-flash-preview-image-generation",
-        contents=prompt,
-        config=genai_types.GenerateContentConfig(
-            response_modalities=["IMAGE", "TEXT"],
-        ),
+    url = (
+        f"https://generativelanguage.googleapis.com/v1beta/"
+        f"models/imagen-4.0-generate-001:predict?key={api_key}"
     )
+    payload = {
+        "instances": [{"prompt": prompt}],
+        "parameters": {"sampleCount": 1, "aspectRatio": "1:1"},
+    }
 
-    # 응답에서 이미지 추출
-    for part in response.candidates[0].content.parts:
-        if part.inline_data is not None:
-            img_bytes = part.inline_data.data
-            from PIL import Image
-            import io
+    resp = http_requests.post(url, json=payload, timeout=60)
+    if resp.status_code != 200:
+        raise RuntimeError(f"Imagen 4 API 오류 {resp.status_code}: {resp.text[:200]}")
 
-            img = Image.open(io.BytesIO(img_bytes))
-            img = img.resize((800, 800), Image.LANCZOS)
+    predictions = resp.json().get("predictions", [])
+    if not predictions or not predictions[0].get("bytesBase64Encoded"):
+        raise RuntimeError("Imagen 4 응답에 이미지가 없습니다.")
 
-            tmp = tempfile.NamedTemporaryFile(suffix=".webp", delete=False)
-            img.convert("RGB").save(tmp, format="WEBP", quality=85)
-            tmp.close()
-            logger.info(f"[Imagen 썸네일] 생성 완료: {tmp.name}")
-            return tmp.name
+    img_bytes = base64.b64decode(predictions[0]["bytesBase64Encoded"])
+    from PIL import Image
+    import io
 
-    raise RuntimeError("Gemini 이미지 생성 결과 없음")
+    img = Image.open(io.BytesIO(img_bytes))
+    img = img.resize((800, 800), Image.LANCZOS)
+
+    tmp = tempfile.NamedTemporaryFile(suffix=".webp", delete=False)
+    img.convert("RGB").save(tmp, format="WEBP", quality=85)
+    tmp.close()
+    logger.info(f"[Imagen 썸네일] 생성 완료: {tmp.name}")
+    return tmp.name
 
 
 def _fetch_pexels_image(query: str, width: int = 800, height: int = 533) -> str:
