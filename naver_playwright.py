@@ -39,20 +39,11 @@ def _is_local_mode() -> bool:
     return os.environ.get("LOCAL_MODE", "").lower() == "true"
 
 
-def _get_local_chrome_profile() -> str:
-    """로컬 크롬 프로필 경로를 자동 감지합니다."""
-    import platform
-    system = platform.system()
-    if system == "Windows":
-        username = os.environ.get("USERNAME", os.environ.get("USER", ""))
-        path = f"C:\\Users\\{username}\\AppData\\Local\\Google\\Chrome\\User Data"
-    elif system == "Darwin":
-        path = os.path.expanduser("~/Library/Application Support/Google/Chrome")
-    else:  # Linux
-        path = os.path.expanduser("~/.config/google-chrome")
-    if os.path.isdir(path):
-        return path
-    raise RuntimeError(f"로컬 크롬 프로필을 찾을 수 없습니다: {path}")
+def _get_local_profile_dir() -> str:
+    """blog-tool 전용 브라우저 프로필 경로를 반환합니다. 없으면 생성."""
+    path = os.path.expanduser("~/blog-tool-profile")
+    os.makedirs(path, exist_ok=True)
+    return path
 
 
 def _get_cookie_path() -> str:
@@ -72,11 +63,10 @@ def _open_persistent_context(p, account_id: str = "daonna525", headless: bool = 
     """Persistent browser context를 열어 반환합니다.
     LOCAL_MODE면 로컬 크롬 프로필을 사용합니다."""
     if _is_local_mode():
-        chrome_profile = _get_local_chrome_profile()
+        profile_dir = _get_local_profile_dir()
         context = p.chromium.launch_persistent_context(
-            user_data_dir=chrome_profile,
+            user_data_dir=profile_dir,
             headless=False,
-            channel="chrome",
             viewport={"width": 1280, "height": 900},
             args=["--no-sandbox", "--disable-dev-shm-usage"],
         )
@@ -96,11 +86,7 @@ def _open_persistent_context(p, account_id: str = "daonna525", headless: bool = 
 def cookies_exist(account_id: str = "daonna525") -> bool:
     """프로파일 디렉토리가 존재하는지 확인. LOCAL_MODE면 로컬 크롬 확인."""
     if _is_local_mode():
-        try:
-            _get_local_chrome_profile()
-            return True
-        except RuntimeError:
-            return False
+        return os.path.isdir(_get_local_profile_dir())
     profile_dir = _get_profile_dir(account_id)
     if os.path.isdir(profile_dir):
         return True

@@ -27,19 +27,11 @@ def _is_local_mode() -> bool:
     return os.environ.get("LOCAL_MODE", "").lower() == "true"
 
 
-def _get_local_chrome_profile() -> str:
-    import platform
-    system = platform.system()
-    if system == "Windows":
-        username = os.environ.get("USERNAME", os.environ.get("USER", ""))
-        path = f"C:\\Users\\{username}\\AppData\\Local\\Google\\Chrome\\User Data"
-    elif system == "Darwin":
-        path = os.path.expanduser("~/Library/Application Support/Google/Chrome")
-    else:
-        path = os.path.expanduser("~/.config/google-chrome")
-    if os.path.isdir(path):
-        return path
-    raise RuntimeError(f"로컬 크롬 프로필을 찾을 수 없습니다: {path}")
+def _get_local_profile_dir() -> str:
+    """blog-tool 전용 브라우저 프로필 경로를 반환합니다. 없으면 생성."""
+    path = os.path.expanduser("~/blog-tool-profile")
+    os.makedirs(path, exist_ok=True)
+    return path
 
 
 def _get_session(account_id: str) -> dict:
@@ -100,11 +92,10 @@ def _login_worker(account_id: str, kakao_id: str, kakao_pw: str):
     try:
         with sync_playwright() as p:
             if _is_local_mode():
-                chrome_profile = _get_local_chrome_profile()
+                profile_dir = _get_local_profile_dir()
                 context = p.chromium.launch_persistent_context(
-                    user_data_dir=chrome_profile,
+                    user_data_dir=profile_dir,
                     headless=False,
-                    channel="chrome",
                     viewport={"width": 1280, "height": 900},
                     args=["--no-sandbox", "--disable-dev-shm-usage"],
                 )
