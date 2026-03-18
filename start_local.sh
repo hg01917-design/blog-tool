@@ -58,7 +58,8 @@ if lsof -i:9222 -sTCP:LISTEN &> /dev/null; then
     echo "[4/5] 크롬이 이미 9222 포트로 실행 중 (스킵)"
 else
     echo "[4/5] 크롬을 디버그 모드로 실행 중..."
-    open -a "Google Chrome" --args --remote-debugging-port=9222 &
+    CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+    "$CHROME" --remote-debugging-port=9222 --no-first-run --no-default-browser-check &
 
     # 포트 열릴 때까지 최대 10초 대기
     CDP_READY=false
