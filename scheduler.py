@@ -15,7 +15,11 @@ import os
 import random
 import re
 import uuid
-import fcntl
+import sys
+if sys.platform == "win32":
+    import msvcrt
+else:
+    import fcntl
 from datetime import datetime, timedelta
 from typing import Optional
 from zoneinfo import ZoneInfo
@@ -43,12 +47,44 @@ _flask_app = None
 #  파일 잠금 헬퍼 (멀티 워커 안전)
 # ──────────────────────────────────────────────
 
+def _lock_file(fd, exclusive=True, blocking=True):
+    """크로스 플랫폼 파일 잠금."""
+    if sys.platform == "win32":
+        if exclusive:
+            if blocking:
+                msvcrt.locking(fd.fileno(), msvcrt.LK_LOCK, 1)
+            else:
+                msvcrt.locking(fd.fileno(), msvcrt.LK_NBLCK, 1)
+        # Windows shared lock은 지원하지 않으므로 배타 잠금으로 대체
+        else:
+            if blocking:
+                msvcrt.locking(fd.fileno(), msvcrt.LK_LOCK, 1)
+            else:
+                msvcrt.locking(fd.fileno(), msvcrt.LK_NBLCK, 1)
+    else:
+        mode = fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH
+        if not blocking:
+            mode |= fcntl.LOCK_NB
+        fcntl.flock(fd, mode)
+
+
+def _unlock_file(fd):
+    """크로스 플랫폼 파일 잠금 해제."""
+    if sys.platform == "win32":
+        try:
+            msvcrt.locking(fd.fileno(), msvcrt.LK_UNLCK, 1)
+        except Exception:
+            pass
+    else:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+
+
 def _acquire_lock():
     """파일 기반 배타 잠금을 획득합니다. 실패 시 None 반환."""
     os.makedirs(_DATA_DIR, exist_ok=True)
     try:
         fd = open(_LOCK_FILE, "w")
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        _lock_file(fd, exclusive=True, blocking=False)
         return fd
     except (OSError, IOError):
         return None
@@ -58,7 +94,7 @@ def _release_lock(fd):
     """파일 잠금을 해제합니다."""
     if fd:
         try:
-            fcntl.flock(fd, fcntl.LOCK_UN)
+            _unlock_file(fd)
             fd.close()
         except Exception:
             pass
@@ -76,11 +112,11 @@ def _read_json(path, default=None):
         return default
     try:
         fd = open(path, "r", encoding="utf-8")
-        fcntl.flock(fd, fcntl.LOCK_SH)
+        _lock_file(fd, exclusive=False, blocking=True)
         try:
             data = json.load(fd)
         finally:
-            fcntl.flock(fd, fcntl.LOCK_UN)
+            _unlock_file(fd)
             fd.close()
         return data
     except (json.JSONDecodeError, OSError):
@@ -91,11 +127,11 @@ def _write_json(path, data):
     """JSON 파일을 씁니다 (배타 잠금)."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
     fd = open(path, "w", encoding="utf-8")
-    fcntl.flock(fd, fcntl.LOCK_EX)
+    _lock_file(fd, exclusive=True, blocking=True)
     try:
         json.dump(data, fd, ensure_ascii=False, indent=2)
     finally:
-        fcntl.flock(fd, fcntl.LOCK_UN)
+        _unlock_file(fd)
         fd.close()
 
 
@@ -794,6 +830,23 @@ def _schedule_next():
 #  공개 API
 # ──────────────────────────────────────────────
 
+def _recover_stuck_processing():
+    """서버 재시작 시 processing 상태로 멈춘 항목을 failed로 복구."""
+    try:
+        queue = _read_json(_QUEUE_FILE, [])
+        recovered = 0
+        for item in queue:
+            if item.get("status") == "processing":
+                item["status"] = "failed"
+                item["error"] = "서버 재시작으로 중단됨 (processing → failed 자동 복구)"
+                recovered += 1
+        if recovered > 0:
+            _write_json(_QUEUE_FILE, queue)
+            logger.warning(f"[스케줄러] processing 상태 {recovered}건을 failed로 복구")
+    except Exception as e:
+        logger.error(f"[스케줄러] processing 복구 실패: {e}")
+
+
 def init_scheduler(app):
     """Flask 앱과 함께 스케줄러를 초기화합니다.
 
@@ -809,6 +862,9 @@ def init_scheduler(app):
     # 설정 파일 초기화
     if not os.path.exists(_CONFIG_FILE):
         _save_config(_DEFAULT_CONFIG)
+
+    # 서버 재시작 시 processing에 멈춘 항목을 failed로 복구
+    _recover_stuck_processing()
 
     _scheduler = BackgroundScheduler(timezone=KST)
     _scheduler.start()
