@@ -39,6 +39,7 @@ def _connect_local_cdp(p):
     try:
         return p.chromium.connect_over_cdp(CDP_URL)
     except Exception as e:
+        logger.error(f"CDP 연결 실패 - 포트 9222 확인 필요: {e}")
         raise RuntimeError(
             "크롬을 디버그 모드로 실행해주세요 (start_local.sh 실행): " + str(e)
         )

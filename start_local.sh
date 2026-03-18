@@ -64,7 +64,15 @@ else
         --no-default-browser-check \
         &> /dev/null &
     sleep 2
-    echo "[4/5] 크롬 디버그 모드 실행 완료 (포트 9222)"
+fi
+
+# 크롬 CDP 포트 확인
+if lsof -i:9222 -sTCP:LISTEN &> /dev/null; then
+    echo "[4/5] ✅ Chrome CDP ready (포트 9222)"
+else
+    echo "[4/5] ❌ Chrome not running on port 9222"
+    echo "크롬이 디버그 모드로 시작되지 않았습니다. 크롬을 수동으로 실행해주세요."
+    exit 1
 fi
 
 echo
